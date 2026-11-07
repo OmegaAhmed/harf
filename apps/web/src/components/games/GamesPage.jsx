@@ -20,6 +20,8 @@ const gameNames = {
   'first-letter-trial': 'رحلة الحرف الأول',
   'word-sounds': 'فقاعات الأصوات',
   'word-match': 'صندوق الكلمات',
+  'associative-matching': 'اختار المتكامل',
+  'sequence-ordering': 'رتب الأحداث',
   'spatial-relationships': 'فين المكان؟'
 };
 
@@ -41,6 +43,15 @@ function shuffledIndexes(length) {
   }
   if (indexes.length > 1 && indexes.every((value, index) => value === index)) {
     indexes.push(indexes.shift());
+  }
+  return indexes;
+}
+
+function randomizedIndexes(length) {
+  const indexes = Array.from({ length }, (_, index) => index);
+  for (let index = indexes.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [indexes[index], indexes[swapIndex]] = [indexes[swapIndex], indexes[index]];
   }
   return indexes;
 }
@@ -176,6 +187,10 @@ function GamePlay({ gameId }) {
   const [selectedMatchRight, setSelectedMatchRight] = useState(null);
   const [matchingMessage, setMatchingMessage] = useState('');
   const [rightPairOrder, setRightPairOrder] = useState([]);
+  const [sequenceOrder, setSequenceOrder] = useState([]);
+  const [sequenceQuestionOrder, setSequenceQuestionOrder] = useState([]);
+  const [sequencePlacements, setSequencePlacements] = useState([]);
+  const [sequenceMessage, setSequenceMessage] = useState('');
   const [submittingAnswer, setSubmittingAnswer] = useState(false);
   const [savingAttempt, setSavingAttempt] = useState(false);
   const [completion, setCompletion] = useState(null);
@@ -183,6 +198,10 @@ function GamePlay({ gameId }) {
   const [saved, setSaved] = useState(false);
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState('');
+  const previewMode = useMemo(
+    () => new URLSearchParams(window.location.search).get('preview') ?? '',
+    []
+  );
   const startedAt = useRef(0);
   const submissionId = useRef('');
   const completionRequestInFlight = useRef(false);
@@ -197,6 +216,8 @@ function GamePlay({ gameId }) {
     () => new URLSearchParams(window.location.search).get('source') === 'home',
     []
   );
+  const isAdminPreview = previewMode === 'admin';
+  const isTrial = game?.access === 'trial' || isAdminPreview;
 
   useEffect(() => {
     if (!completion) return undefined;
@@ -208,7 +229,7 @@ function GamePlay({ gameId }) {
   }, [completion]);
 
   useEffect(() => {
-    if (game?.template !== 'picture-matching' || !feedback || completion) return undefined;
+    if (!['picture-matching', 'associative-matching'].includes(game?.template) || !feedback || completion) return undefined;
     const timer = window.setTimeout(() => {
       setFeedback(null);
       setSelectedMatchLeft(null);
@@ -224,9 +245,18 @@ function GamePlay({ gameId }) {
       setLoading(true);
       setError('');
       try {
-        const { game: loadedGame } = await apiRequest(`/api/v1/games/${encodeURIComponent(gameId)}`);
+        const { game: loadedGame } = await apiRequest(
+          previewMode === 'admin'
+            ? `/api/v1/admin/games/${encodeURIComponent(gameId)}/preview`
+            : `/api/v1/games/${encodeURIComponent(gameId)}`
+        );
         if (!active) return;
         setGame(loadedGame);
+
+        if (isAdminPreview) {
+          const session = await apiRequest('/api/v1/auth/session');
+          if (session.csrfToken) setCsrfToken(session.csrfToken);
+        }
 
         if (loadedGame.access === 'trial') return;
 
@@ -250,12 +280,12 @@ function GamePlay({ gameId }) {
     return () => {
       active = false;
     };
-  }, [gameId, requestedChildId]);
+  }, [gameId, previewMode, requestedChildId]);
 
   useEffect(() => {
     if (!selectedChildId || game?.access !== 'parent') {
       setHasConsent(false);
-      setActivityAccess(game?.access === 'trial' ? 'available' : 'checking');
+      setActivityAccess(game?.access === 'trial' || isAdminPreview ? 'available' : 'checking');
       return undefined;
     }
     let active = true;
@@ -283,19 +313,25 @@ function GamePlay({ gameId }) {
     return () => {
       active = false;
     };
-  }, [game, gameId, selectedChildId]);
+  }, [game, gameId, isAdminPreview, selectedChildId]);
 
-  const isTrial = game?.access === 'trial';
   const childPathId = selectedChildId || requestedChildId;
-  const returnHref = isTrial
-    ? enteredFromHomepage ? '/#trial-games' : '/games'
-    : requestedChildId
-      ? `/games?childId=${encodeURIComponent(childPathId)}`
-      : '/dashboard';
-  const returnLabel = isTrial
-    ? enteredFromHomepage ? 'العودة للألعاب التجريبية' : 'كل الألعاب'
-    : requestedChildId ? 'العودة لمسار الطفل' : 'لوحة الأسرة';
-  const currentQuestion = game?.questions[questionIndex];
+  const returnHref = isAdminPreview
+    ? '/admin'
+    : isTrial
+      ? enteredFromHomepage ? '/#trial-games' : '/games'
+      : requestedChildId
+        ? `/games?childId=${encodeURIComponent(childPathId)}`
+        : '/dashboard';
+  const returnLabel = isAdminPreview
+    ? 'العودة إلى المكتبة'
+    : isTrial
+      ? enteredFromHomepage ? 'العودة للألعاب التجريبية' : 'كل الألعاب'
+      : requestedChildId ? 'العودة لمسار الطفل' : 'لوحة الأسرة';
+  const currentSequenceQuestionIndex = sequenceQuestionOrder[questionIndex] ?? questionIndex;
+  const currentQuestion = game?.template === 'sequence-ordering'
+    ? game.questions[currentSequenceQuestionIndex]
+    : game?.questions[questionIndex];
   const companionState = feedback
     ? feedback.correct ? 'correct' : 'encouragement'
     : submittingAnswer ? 'thinking'
@@ -317,7 +353,21 @@ function GamePlay({ gameId }) {
     setSelectedMatchLeft(null);
     setSelectedMatchRight(null);
     setMatchingMessage('');
-    setRightPairOrder(game?.template === 'picture-matching' ? shuffledIndexes(game.questions.length) : []);
+    setSequenceMessage('');
+    setRightPairOrder(['picture-matching', 'associative-matching'].includes(game?.template)
+      ? shuffledIndexes(game.questions.length)
+      : []);
+    setSequenceOrder(game?.template === 'sequence-ordering'
+      ? Array.from({ length: game.items.length }, (_, index) => index)
+      : []);
+    setSequenceQuestionOrder(game?.template === 'sequence-ordering'
+      ? game.sequenceOrderMode === 'random'
+        ? randomizedIndexes(game.questions.length)
+        : Array.from({ length: game.questions.length }, (_, index) => index)
+      : []);
+    setSequencePlacements(game?.template === 'sequence-ordering'
+      ? Array.from({ length: game.items.length }, () => null)
+      : []);
     submissionId.current = crypto.randomUUID();
     completionRequestInFlight.current = false;
     attemptAlreadySaved.current = false;
@@ -342,7 +392,10 @@ function GamePlay({ gameId }) {
     setSubmittingAnswer(true);
     setError('');
     try {
-      const { answer } = await apiRequest(`/api/v1/games/${encodeURIComponent(gameId)}/answer`, {
+      const answerPath = isAdminPreview
+        ? `/api/v1/admin/games/${encodeURIComponent(gameId)}/preview/answer`
+        : `/api/v1/games/${encodeURIComponent(gameId)}/answer`;
+      const { answer } = await apiRequest(answerPath, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -359,6 +412,13 @@ function GamePlay({ gameId }) {
         return next;
       });
       setFeedback({ ...answer, answerIndex, skipped: answerIndex === -1 });
+      if (answer.correct && game.template === 'sequence-ordering') {
+        setSequencePlacements((current) => {
+          const next = [...current];
+          next[answerIndex] = targetQuestionIndex;
+          return next;
+        });
+      }
       if (!muted) {
         const feedbackAudio = game.assets?.[answer.correct ? 'correct' : 'encouragement']?.audioUrl;
         if (feedbackAudio) playGameAudio(feedbackAudio);
@@ -371,6 +431,11 @@ function GamePlay({ gameId }) {
           setMatchedPairs((current) => [...new Set([...current, targetQuestionIndex])]);
         }
       }
+      if (game.template === 'associative-matching') {
+        if (answer.correct) {
+          setMatchedPairs((current) => [...new Set([...current, targetQuestionIndex, answerIndex])]);
+        }
+      }
     } catch (requestError) {
       setError(requestError.message);
       if (game.template === 'picture-matching') setSelectedMatchLeft(null);
@@ -380,7 +445,7 @@ function GamePlay({ gameId }) {
     }
   };
 
-  const completeGame = async () => {
+  const completeGame = async (spatialCorrectCount = null) => {
     if (completionRequestInFlight.current || attemptAlreadySaved.current) return;
     const durationSeconds = Math.min(3600, Math.max(0, Math.round((Date.now() - startedAt.current) / 1000)));
     if (isTrial) {
@@ -388,10 +453,13 @@ function GamePlay({ gameId }) {
       const totalQuestions = game.template === 'spatial-relationships'
         ? game.spatial.steps.length
         : game.questions.length;
+      const correctCount = Number.isInteger(spatialCorrectCount)
+        ? spatialCorrectCount
+        : answerResults.filter(Boolean).length;
       setCompletion({
-        correctCount: answerResults.filter(Boolean).length,
+        correctCount,
         totalQuestions,
-        scorePercent: Math.round((answerResults.filter(Boolean).length / totalQuestions) * 100),
+        scorePercent: Math.round((correctCount / totalQuestions) * 100),
         companion: game.companion,
         companionAnimal: game.companionAnimal,
         instructions: game.instructions,
@@ -463,7 +531,11 @@ function GamePlay({ gameId }) {
   }, [nextQuestion]);
 
   useEffect(() => {
-    if (!feedback || !game || game.template === 'picture-matching') return undefined;
+    if (!feedback || !game || ['picture-matching', 'associative-matching'].includes(game.template)) return undefined;
+    if (game.template === 'sequence-ordering' && !feedback.correct) {
+      const timer = window.setTimeout(() => setFeedback(null), 1200);
+      return () => window.clearTimeout(timer);
+    }
     const timer = window.setTimeout(
       () => nextQuestionRef.current?.(),
       feedback.correct ? 1400 : 1800
@@ -482,8 +554,25 @@ function GamePlay({ gameId }) {
     void selectAnswer(rightIndex, leftIndex);
   };
 
+  const completeAssociativeMatching = (leftIndex, rightIndex) => {
+    if (submittingAnswer || answerRequestInFlight.current || feedback || matchedPairs.includes(leftIndex)) return;
+    if (leftIndex === null) {
+      setMatchingMessage('اختار العنصر الأول ثم ابحث عن الارتباط الصحيح.');
+      return;
+    }
+    if (matchedPairs.includes(rightIndex)) return;
+    setSelectedMatchRight(rightIndex);
+    void selectAnswer(rightIndex, leftIndex);
+  };
+
   useEffect(() => {
     if (game?.template !== 'picture-matching' || !started
+      || matchedPairs.length !== game.questions.length || completion) return;
+    void completeGame();
+  }, [game, started, matchedPairs, completion]);
+
+  useEffect(() => {
+    if (game?.template !== 'associative-matching' || !started
       || matchedPairs.length !== game.questions.length || completion) return;
     void completeGame();
   }, [game, started, matchedPairs, completion]);
@@ -616,31 +705,43 @@ function GamePlay({ gameId }) {
                         submissionId={submissionId.current}
                         muted={muted}
                         isTrial={isTrial}
+                        isAdminPreview={isAdminPreview}
                         onCompanionState={setSpatialCompanionState}
                         onStepComplete={(stepIndex) => setAnswerResults((current) => {
                           const next = [...current];
                           next[stepIndex] = true;
                           return next;
                         })}
-                        onComplete={() => void completeGame()}
+                        onComplete={() => void completeGame(game.spatial.steps.length)}
                       />
                     ) : <section className="game-activity" aria-labelledby="game-question">
                     <GameProgress
-                      current={game.template === 'picture-matching' ? matchedPairs.length : questionIndex + 1}
+                      current={['picture-matching', 'associative-matching'].includes(game.template)
+                        ? matchedPairs.length
+                        : questionIndex + 1}
                       total={game.questions.length}
-                      label={game.template === 'picture-matching' ? 'الأزواج المكتملة' : 'السؤال'}
+                      label={['picture-matching', 'associative-matching'].includes(game.template) ? 'الأزواج المكتملة' : 'السؤال'}
                     />
-                    {game.template === 'picture-matching' && (
+                    {(game.template === 'picture-matching' || game.template === 'associative-matching') && (
                       <div className="game-activity__content game-picture-matching" aria-labelledby="game-question">
                         <div className="game-picture-matching__heading">
-                          <h2 id="game-question">وصّل كل صورة بمثيلتها</h2>
-                          <p>اختار صورة من المجموعة الأولى، ثم اضغط على الصورة المطابقة لها.</p>
+                          <h2 id="game-question">
+                            {game.template === 'associative-matching' ? 'اختر العلاقة الصحيحة بين العنصرين' : 'وصّل كل صورة بمثيلتها'}
+                          </h2>
+                          <p>
+                            {game.template === 'associative-matching'
+                              ? 'اختار العنصر من اليسار ثم ابحث عن الارتباط الصحيح من الجانب الآخر.'
+                              : 'اختار صورة من المجموعة الأولى، ثم اضغط على الصورة المطابقة لها.'}
+                          </p>
                         </div>
                         <div className="game-picture-matching__groups">
-                          <section className="game-picture-matching__group" aria-label="المجموعة الأولى">
-                            <h3>المجموعة الأولى</h3>
+                          <section className="game-picture-matching__group" aria-label={game.template === 'associative-matching' ? 'العناصر اليسرى' : 'المجموعة الأولى'}>
+                            <h3>{game.template === 'associative-matching' ? 'العناصر' : 'المجموعة الأولى'}</h3>
                             <div className="game-picture-matching__cards">
-                              {game.questions.map((question, pairIndex) => {
+                              {(game.pairs ?? game.questions).map((entry, pairIndex) => {
+                                const leftPair = game.template === 'associative-matching'
+                                  ? (entry.leftItem ?? { label: entry.label ?? `العنصر ${pairIndex + 1}`, imageUrl: entry.leftItem?.imageUrl ?? entry.imageUrl })
+                                  : game.questions[pairIndex];
                                 const matched = matchedPairs.includes(pairIndex);
                                 const selected = selectedMatchLeft === pairIndex;
                                 return (
@@ -650,27 +751,34 @@ function GamePlay({ gameId }) {
                                     key={`left-${pairIndex}`}
                                     disabled={matched || submittingAnswer || savingAttempt || Boolean(feedback)}
                                     aria-pressed={selected}
-                                    aria-label={`${matched ? 'تمت المطابقة: ' : selected ? 'الصورة المختارة: ' : 'اختر الصورة: '}${question.promptImageAlt || question.prompt}`}
+                                    aria-label={`${matched ? 'تمت المطابقة: ' : selected ? 'العنصر المختار: ' : 'اختر العنصر: '}${leftPair?.label ?? leftPair?.prompt ?? 'العنصر'}`}
                                     onClick={() => {
                                       setSelectedMatchLeft(pairIndex);
-                                      setMatchingMessage('اختار الآن الصورة المطابقة من المجموعة الثانية.');
+                                      setMatchingMessage(game.template === 'associative-matching'
+                                        ? 'اختار الآن الارتباط الصحيح من المجموعة الثانية.'
+                                        : 'اختار الآن الصورة المطابقة من المجموعة الثانية.');
                                     }}
                                   >
-                                    <GameImage src={question.promptImageUrl} alt={question.promptImageAlt || question.prompt}
+                                    <GameImage src={leftPair?.imageUrl ?? leftPair?.promptImageUrl} alt={leftPair?.label ?? leftPair?.prompt ?? ''}
                                       className="game-picture-matching__image" />
-                                    <span>{question.prompt.replace(/^وصل صورة\s*/u, '')}</span>
+                                    <span>{game.template === 'associative-matching'
+                                      ? (leftPair?.label ?? `العنصر ${pairIndex + 1}`)
+                                      : leftPair?.prompt?.replace(/^وصل صورة\s*/u, '')}</span>
                                     {matched && <small aria-hidden="true">تمت المطابقة ✓</small>}
                                   </button>
                                 );
                               })}
                             </div>
                           </section>
-                          <section className="game-picture-matching__group" aria-label="المجموعة الثانية">
-                            <h3>المجموعة الثانية</h3>
+                          <section className="game-picture-matching__group" aria-label={game.template === 'associative-matching' ? 'العلاقات الصحيحة' : 'المجموعة الثانية'}>
+                            <h3>{game.template === 'associative-matching' ? 'الارتباطات' : 'المجموعة الثانية'}</h3>
                             <div className="game-picture-matching__cards">
                               {rightPairOrder.map((pairIndex) => {
-                                const question = game.questions[pairIndex];
-                                if (!question) return null;
+                                const pair = game.pairs?.[pairIndex] ?? game.questions[pairIndex];
+                                const rightItem = game.template === 'associative-matching'
+                                  ? (pair?.rightItem ?? { label: pair?.label ?? `الارتباط ${pairIndex + 1}`, imageUrl: pair?.imageUrl })
+                                  : { label: game.questions[pairIndex]?.options?.[pairIndex], imageUrl: game.questions[pairIndex]?.optionImageUrls?.[pairIndex] };
+                                if (!pair) return null;
                                 const matched = matchedPairs.includes(pairIndex);
                                 const selected = selectedMatchRight === pairIndex;
                                 return (
@@ -680,13 +788,15 @@ function GamePlay({ gameId }) {
                                     key={`right-${pairIndex}`}
                                     disabled={matched || submittingAnswer || savingAttempt || Boolean(feedback)}
                                     aria-pressed={selected}
-                                    aria-label={`${matched ? 'تمت المطابقة: ' : selected ? 'الصورة المختارة: ' : 'اختر الصورة: '}${question.optionImageAltTexts?.[pairIndex] || question.options[pairIndex]}`}
-                                    onClick={() => completePictureMatching(selectedMatchLeft, pairIndex)}
+                                    aria-label={`${matched ? 'تمت المطابقة: ' : selected ? 'الاختيار المختار: ' : 'اختر: '}${rightItem?.label ?? 'الارتباط'}`}
+                                    onClick={() => game.template === 'associative-matching'
+                                      ? completeAssociativeMatching(selectedMatchLeft, pairIndex)
+                                      : completePictureMatching(selectedMatchLeft, pairIndex)}
                                   >
-                                    <GameImage src={question.optionImageUrls?.[pairIndex]}
-                                      alt={question.optionImageAltTexts?.[pairIndex] || question.options[pairIndex]}
+                                    <GameImage src={rightItem?.imageUrl ?? rightItem?.optionImageUrls?.[pairIndex]}
+                                      alt={rightItem?.label ?? ''}
                                       className="game-picture-matching__image" />
-                                    <span>{question.options[pairIndex]}</span>
+                                    <span>{rightItem?.label ?? 'الاختيار'}</span>
                                     {matched && <small aria-hidden="true">تمت المطابقة ✓</small>}
                                   </button>
                                 );
@@ -703,7 +813,89 @@ function GamePlay({ gameId }) {
                         {savingAttempt && <p className="dashboard-loading" role="status">جارٍ حفظ نتيجة اللعبة…</p>}
                       </div>
                     )}
-                    {game.template !== 'picture-matching' && currentQuestion && (
+                    {game.template === 'sequence-ordering' && currentQuestion && (
+                      <div className="game-activity__content game-sequence-ordering" aria-labelledby="game-question">
+                        <div className="game-sequence-ordering__heading">
+                          <h2 id="game-question">رتّب العناصر في التسلسل الصحيح</h2>
+                          <p>اختر موضع العنصر الحالي. ستظهر الصورة في مكانها الصحيح أعلى الخيارات.</p>
+                        </div>
+                        <section
+                          className="game-sequence-ordering__sequence"
+                          aria-label="التسلسل الصحيح"
+                          style={{ '--sequence-count': Math.max(1, game.items.length) }}
+                        >
+                          {sequenceOrder.map((sequenceIndex) => {
+                            const placedItemIndex = sequencePlacements[sequenceIndex];
+                            const placedItem = placedItemIndex === null || placedItemIndex === undefined
+                              ? null
+                              : game.items[placedItemIndex];
+                            return (
+                              <div
+                                className={`game-sequence-ordering__slot${placedItem ? ' is-filled' : ''}`}
+                                key={`sequence-slot-${sequenceIndex}`}
+                                aria-label={`${currentQuestion.options[sequenceIndex] ?? `الموضع ${sequenceIndex + 1}`}${placedItem ? `: ${placedItem.label}` : ': فارغ'}`}
+                              >
+                                {placedItem ? (
+                                  <>
+                                    {placedItem.imageUrl && (
+                                      <GameImage src={placedItem.imageUrl} alt={placedItem.imageAlt ?? placedItem.label}
+                                        className="game-sequence-ordering__image" />
+                                    )}
+                                    <span>{placedItem.label}</span>
+                                  </>
+                                ) : (
+                                  <span className="game-sequence-ordering__empty" aria-hidden="true">؟</span>
+                                )}
+                                <small>{currentQuestion.options[sequenceIndex] ?? `الموضع ${sequenceIndex + 1}`}</small>
+                              </div>
+                            );
+                          })}
+                        </section>
+                        <div className="game-sequence-ordering__current" aria-live="polite">
+                          <h3>العنصر الحالي</h3>
+                          <div className="game-sequence-ordering__current-card">
+                            {currentQuestion.promptImageUrl && (
+                              <GameImage src={currentQuestion.promptImageUrl} alt={currentQuestion.promptImageAlt ?? currentQuestion.prompt}
+                                className="game-sequence-ordering__image" />
+                            )}
+                            <span>{currentQuestion.prompt}</span>
+                          </div>
+                        </div>
+                        <section className="game-sequence-ordering__choices" aria-label="خيارات المواضع">
+                          <h3>اختر الموضع</h3>
+                          <div
+                            className="game-sequence-ordering__choice-row"
+                            style={{ '--sequence-count': Math.max(1, sequenceOrder.length) }}
+                          >
+                            {(sequenceOrder.length ? sequenceOrder : Array.from({ length: currentQuestion.options.length }, (_, index) => index)).map((sequenceIndex) => {
+                              const optionText = currentQuestion.options[sequenceIndex] ?? `الموضع ${sequenceIndex + 1}`;
+                              const selected = feedback?.answerIndex === sequenceIndex;
+                              const occupied = sequencePlacements[sequenceIndex] !== null
+                                && sequencePlacements[sequenceIndex] !== undefined;
+                              return (
+                                <button
+                                  type="button"
+                                  className={`game-sequence-ordering__choice${selected && feedback?.correct ? ' is-correct' : ''}${selected && feedback && !feedback.correct ? ' is-incorrect' : ''}`}
+                                  key={`sequence-option-${sequenceIndex}`}
+                                  onClick={() => void selectAnswer(sequenceIndex, currentSequenceQuestionIndex)}
+                                  disabled={occupied || Boolean(feedback) || submittingAnswer || savingAttempt}
+                                  aria-pressed={selected}
+                                >
+                                  <span>{optionText}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </section>
+                        {feedback && (
+                          <p className={`game-picture-matching__feedback${feedback.correct ? ' is-correct' : ' is-incorrect'}`} role="status" aria-live="polite">
+                            {feedback.correct ? 'برافو! هذا الترتيب صحيح.' : 'حاول مرة أخرى. لاحظ ترتيب العناصر.'}
+                          </p>
+                        )}
+                        {savingAttempt && <p className="dashboard-loading" role="status">جارٍ حفظ نتيجة اللعبة…</p>}
+                      </div>
+                    )}
+                    {game.template !== 'picture-matching' && game.template !== 'associative-matching' && game.template !== 'sequence-ordering' && currentQuestion && (
                       <div className="game-activity__content">
                           <div className="game-question-row">
                             <h2 id="game-question">{currentQuestion.prompt}</h2>

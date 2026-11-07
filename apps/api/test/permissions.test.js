@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   ALL_PERMISSIONS,
+  getRolePermissions,
   permissionForAdminRequest,
   requireAdminRequestPermission,
   requirePermission
@@ -32,6 +33,36 @@ test('permission middleware grants only active admin roles with the requested pe
     role: 'parent',
     adminRoleId: { permissions: ALL_PERMISSIONS, isActive: true }
   }, 'reports.view').statusCode, 403);
+});
+
+test('super-admin gets every current permission even when its stored permission list is stale', () => {
+  const user = {
+    role: 'admin',
+    adminRoleId: { key: 'super-admin', permissions: ['users.view'], isActive: true }
+  };
+  assert.deepEqual(getRolePermissions(user), ALL_PERMISSIONS);
+
+  let error;
+  requireAdminRequestPermission({
+    method: 'GET',
+    path: '/games',
+    authenticated: { user }
+  }, {}, (nextError) => { error = nextError; });
+  assert.equal(error, undefined);
+});
+
+test('super-admin can pass both read and manage checks for the admin game library', () => {
+  const user = {
+    role: 'admin',
+    adminRoleId: { key: 'super-admin', permissions: ['users.view'], isActive: true }
+  };
+  for (const [method, path] of [['GET', '/games'], ['POST', '/games/test/preview/answer']]) {
+    let error;
+    requireAdminRequestPermission({ method, path, authenticated: { user } }, {}, (nextError) => {
+      error = nextError;
+    });
+    assert.equal(error, undefined);
+  }
 });
 
 test('admin endpoints map to centralized permissions and unknown endpoints fail closed', () => {

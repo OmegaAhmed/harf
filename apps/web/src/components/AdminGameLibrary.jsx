@@ -104,10 +104,19 @@ function contentPayload(content, questions) {
     instructions: content.instructions.trim(),
     assetAssignments: content.assetAssignments
   };
-  if (baseContent.template === 'picture-matching') {
+  if (baseContent.template === 'picture-matching' || baseContent.template === 'associative-matching') {
     return {
       ...baseContent,
       pairs: content.pairs ?? [],
+      difficulty: content.difficulty ?? 'beginner',
+      questions: []
+    };
+  }
+  if (baseContent.template === 'sequence-ordering') {
+    return {
+      ...baseContent,
+      items: content.items ?? [],
+      sequenceOrderMode: content.sequenceOrderMode ?? 'random',
       difficulty: content.difficulty ?? 'beginner',
       questions: []
     };
@@ -149,6 +158,8 @@ function emptyContent() {
     instructions: '',
     questions: [{ prompt: 'اختر حرف «م»', options: ['م', 'ب', 'س'], correctAnswerIndex: 0, difficulty: 'beginner' }],
     pairs: [],
+    items: [],
+    sequenceOrderMode: 'random',
     difficulty: 'beginner',
     spatial: null,
     assetAssignments: []
@@ -319,6 +330,35 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
           spatial: current.spatial ?? createSpatialDraft()
         };
       }
+      if (template === 'sequence-ordering') {
+        return {
+          ...current,
+          template,
+          questions: [],
+          items: current.items?.length ? current.items : current.questions.map((question, index) => ({
+            id: `item-${index + 1}`,
+            label: question.prompt.replace(/^.*?\s+/u, '') || `عنصر ${index + 1}`,
+            imageAssetId: question.promptImageAssetId ?? null,
+            correctOrder: index + 1
+          })).slice(0, 8)
+        };
+      }
+      if (template === 'associative-matching') {
+        const pairs = current.pairs?.length ? current.pairs : current.questions.map((question, index) => ({
+          pairId: `pair-${index + 1}`,
+          leftItem: {
+            id: `left-${index + 1}`,
+            label: question.prompt.replace(/^.*?\s+/u, '') || `مفردة ${index + 1}`,
+            imageAssetId: question.promptImageAssetId ?? null
+          },
+          rightItem: {
+            id: `right-${index + 1}`,
+            label: question.options[question.correctAnswerIndex] ?? `اختيار ${index + 1}`,
+            imageAssetId: question.optionImageAssetIds?.[question.correctAnswerIndex] ?? null
+          }
+        })).slice(0, 8); 
+        return { ...current, template, pairs };
+      }
       if (template !== 'picture-matching') return { ...current, template };
       const pairs = current.pairs?.length ? current.pairs : current.questions.map((question, index) => ({
         id: `pair-${index + 1}`,
@@ -366,6 +406,48 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
     });
   };
 
+  const updateSequenceItem = (itemIndex, field, value) => {
+    setContent((current) => ({
+      ...current,
+      items: current.items.map((item, index) => index === itemIndex ? { ...item, [field]: value } : item)
+    }));
+  };
+
+  const addSequenceItem = () => {
+    setContent((current) => current.items.length >= 20 ? current : ({
+      ...current,
+      items: [...current.items, {
+        id: `item-${crypto.randomUUID().replaceAll('-', '').slice(0, 12)}`,
+        label: '',
+        imageAssetId: null,
+        correctOrder: current.items.length + 1
+      }]
+    }));
+  };
+
+  const removeSequenceItem = (itemIndex) => {
+    setContent((current) => ({
+      ...current,
+      items: current.items.filter((_, index) => index !== itemIndex).map((item, index) => ({
+        ...item,
+        correctOrder: index + 1
+      }))
+    }));
+  };
+
+  const moveSequenceItem = (itemIndex, direction) => {
+    setContent((current) => {
+      const targetIndex = itemIndex + direction;
+      if (targetIndex < 0 || targetIndex >= current.items.length) return current;
+      const items = [...current.items];
+      [items[itemIndex], items[targetIndex]] = [items[targetIndex], items[itemIndex]];
+      return {
+        ...current,
+        items: items.map((item, index) => ({ ...item, correctOrder: index + 1 }))
+      };
+    });
+  };
+
   const updateQuestionDraft = (value) => {
     setQuestionDraft(value);
     try {
@@ -390,7 +472,7 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
   };
 
   const persistDraft = async () => {
-    const payload = contentPayload(content, ['picture-matching', 'spatial-relationships'].includes(content.template)
+    const payload = contentPayload(content, ['picture-matching', 'associative-matching', 'sequence-ordering', 'spatial-relationships'].includes(content.template)
       ? []
       : parseQuestionText(questionDraft));
     const result = await apiRequest(`/api/v1/admin/games/${encodeURIComponent(selectedGameId)}`, {
@@ -433,17 +515,45 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
       while (newGameTemplate === 'picture-matching' && initialPairs.length < 2) {
         initialPairs.push({ id: `pair-${initialPairs.length + 1}`, label: `صورة ${initialPairs.length + 1}`, imageAssetId: null });
       }
+      const initialAssociativePairs = content.pairs?.length ? [...content.pairs] : content.questions.slice(0, 8).map((question, index) => ({
+        pairId: `pair-${index + 1}`,
+        leftItem: {
+          id: `left-${index + 1}`,
+          label: question.prompt.replace(/^.*?\s+/u, '') || `مفردة ${index + 1}`,
+          imageAssetId: question.promptImageAssetId ?? null
+        },
+        rightItem: {
+          id: `right-${index + 1}`,
+          label: question.options[question.correctAnswerIndex] ?? `اختيار ${index + 1}`,
+          imageAssetId: question.optionImageAssetIds?.[question.correctAnswerIndex] ?? null
+        }
+      }));
+      while (newGameTemplate === 'associative-matching' && initialAssociativePairs.length < 2) {
+        initialAssociativePairs.push({
+          pairId: `pair-${initialAssociativePairs.length + 1}`,
+          leftItem: { id: `left-${initialAssociativePairs.length + 1}`, label: `مفردة ${initialAssociativePairs.length + 1}`, imageAssetId: null },
+          rightItem: { id: `right-${initialAssociativePairs.length + 1}`, label: `اختيار ${initialAssociativePairs.length + 1}`, imageAssetId: null }
+        });
+      }
+      const initialSequenceItems = content.items?.length ? [...content.items] : content.questions.slice(0, 8).map((question, index) => ({
+        id: `item-${index + 1}`,
+        label: question.prompt.replace(/^.*?\s+/u, '') || `عنصر ${index + 1}`,
+        imageAssetId: question.promptImageAssetId ?? null,
+        correctOrder: index + 1
+      }));
       const newContent = {
         ...content,
         template: newGameTemplate,
         title: newGameTitle.trim(),
         description: newGameDescription.trim(),
         ...(newGameTemplate === 'picture-matching' ? { pairs: initialPairs } : {}),
+        ...(newGameTemplate === 'associative-matching' ? { pairs: initialAssociativePairs } : {}),
+        ...(newGameTemplate === 'sequence-ordering' ? { items: initialSequenceItems } : {}),
         ...(newGameTemplate === 'spatial-relationships'
           ? { questions: [], spatial: createSpatialDraft() }
           : {})
       };
-      const questions = ['picture-matching', 'spatial-relationships'].includes(newGameTemplate)
+      const questions = ['picture-matching', 'associative-matching', 'sequence-ordering', 'spatial-relationships'].includes(newGameTemplate)
         ? []
         : questionDraft.trim() ? parseQuestionText(questionDraft) : emptyContent().questions;
       const payload = contentPayload(newContent, questions);
@@ -713,6 +823,8 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
                     <option value="multiple-choice">اختيار من متعدد</option>
                     <option value="matching-pairs">توصيل الكلمات بالصور</option>
                     <option value="picture-matching">توصيل الصور</option>
+                    <option value="associative-matching">اختار المتكامل</option>
+                    <option value="sequence-ordering">رتب الأحداث</option>
                     <option value="audio-choice">نشاط استماع</option>
                     <option value="spatial-relationships">العلاقات المكانية</option>
                   </select>
@@ -735,6 +847,8 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
                     <option value="multiple-choice">اختيار من متعدد</option>
                     <option value="matching-pairs">توصيل الكلمات بالصور</option>
                     <option value="picture-matching">وصّل الصورة بمثيلتها</option>
+                    <option value="associative-matching">اختار المتكامل</option>
+                    <option value="sequence-ordering">رتب الأحداث</option>
                     <option value="audio-choice">الاستماع لصوت واختيار الصورة</option>
                     <option value="spatial-relationships">العلاقات المكانية · تحريك العناصر</option>
                   </select>
@@ -890,6 +1004,194 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
                     </div>
                   </div>
                 </section>
+              ) : content.template === 'associative-matching' ? (
+                <section className="admin-library__question-media admin-picture-matching" aria-label="أزواج الارتباط">
+                  <div className="admin-picture-matching__heading">
+                    <div>
+                      <h4>أزواج الارتباط</h4>
+                      <p>اختر الصورة في الجهة اليسرى وارتبط بها الصورة المناسبة في الجهة اليمنى. يختار الطفل الرابط الصحيح بين الاثنين.</p>
+                    </div>
+                    <label>مستوى الصعوبة
+                      <select value={content.difficulty ?? 'beginner'}
+                        onChange={(event) => updateContentField('difficulty', event.target.value)}>
+                        <option value="beginner">مبتدئ</option>
+                        <option value="intermediate">متوسط</option>
+                        <option value="advanced">متقدم</option>
+                      </select>
+                    </label>
+                  </div>
+                  {content.pairs.map((pair, pairIndex) => {
+                    const leftAsset = assets.find((asset) => asset.id === pair.leftItem?.imageAssetId);
+                    const rightAsset = assets.find((asset) => asset.id === pair.rightItem?.imageAssetId);
+                    return (
+                      <fieldset className="admin-picture-matching__pair" key={pair.pairId ?? pair.id ?? pairIndex}>
+                        <legend>الزوج {pairIndex + 1}</legend>
+                        <div className="admin-picture-matching__pair-grid">
+                          <label>اليسار · اسم الصورة/العنصر
+                            <input value={pair.leftItem?.label ?? ''} maxLength="80" required
+                              onChange={(event) => setContent((current) => ({
+                                ...current,
+                                pairs: current.pairs.map((item, index) => index === pairIndex
+                                  ? { ...item, leftItem: { ...item.leftItem, label: event.target.value } }
+                                  : item)
+                              }))} />
+                          </label>
+                          <label>اليمين · الصورة المرتبطة
+                            <input value={pair.rightItem?.label ?? ''} maxLength="80" required
+                              onChange={(event) => setContent((current) => ({
+                                ...current,
+                                pairs: current.pairs.map((item, index) => index === pairIndex
+                                  ? { ...item, rightItem: { ...item.rightItem, label: event.target.value } }
+                                  : item)
+                              }))} />
+                          </label>
+                        </div>
+                        <div className="admin-picture-matching__pair-grid">
+                          <label>صورة اليسار
+                            <select value={pair.leftItem?.imageAssetId ?? ''} required
+                              onChange={(event) => setContent((current) => ({
+                                ...current,
+                                pairs: current.pairs.map((item, index) => index === pairIndex
+                                  ? { ...item, leftItem: { ...item.leftItem, imageAssetId: event.target.value || null } }
+                                  : item)
+                              }))}>
+                              <option value="">اختر صورة</option>
+                              {assetsOfKind('image', pair.leftItem?.imageAssetId).map((asset) => (
+                                <option value={asset.id} key={asset.id}>{assetOptionLabel(asset)}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>صورة اليمين
+                            <select value={pair.rightItem?.imageAssetId ?? ''} required
+                              onChange={(event) => setContent((current) => ({
+                                ...current,
+                                pairs: current.pairs.map((item, index) => index === pairIndex
+                                  ? { ...item, rightItem: { ...item.rightItem, imageAssetId: event.target.value || null } }
+                                  : item)
+                              }))}>
+                              <option value="">اختر صورة</option>
+                              {assetsOfKind('image', pair.rightItem?.imageAssetId).map((asset) => (
+                                <option value={asset.id} key={asset.id}>{assetOptionLabel(asset)}</option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                        <div className="admin-picture-matching__preview">
+                          {leftAsset?.active && leftAsset.available !== false
+                            ? <AdminAssetPreview asset={leftAsset} />
+                            : <span className="game-image-placeholder" role="img" aria-label="الصورة غير متاحة">▧</span>}
+                          <span>{leftAsset?.displayName ?? 'اختر صورة اليسار'}</span>
+                        </div>
+                        <div className="admin-picture-matching__preview">
+                          {rightAsset?.active && rightAsset.available !== false
+                            ? <AdminAssetPreview asset={rightAsset} />
+                            : <span className="game-image-placeholder" role="img" aria-label="الصورة غير متاحة">▧</span>}
+                          <span>{rightAsset?.displayName ?? 'اختر صورة اليمين'}</span>
+                        </div>
+                        <button type="button" className="button button--small button--outline"
+                          disabled={content.pairs.length <= 2} onClick={() => setContent((current) => ({
+                            ...current,
+                            pairs: current.pairs.filter((_, index) => index !== pairIndex)
+                          }))}>
+                          حذف الزوج
+                        </button>
+                        <div className="admin-picture-matching__order">
+                          <button type="button" className="button button--small button--outline"
+                            aria-label={`تحريك الزوج ${pairIndex + 1} للأعلى`}
+                            disabled={pairIndex === 0} onClick={() => setContent((current) => {
+                              const targetIndex = pairIndex - 1;
+                              if (targetIndex < 0) return current;
+                              const pairs = [...current.pairs];
+                              [pairs[pairIndex], pairs[targetIndex]] = [pairs[targetIndex], pairs[pairIndex]];
+                              return { ...current, pairs };
+                            })}>↑</button>
+                          <button type="button" className="button button--small button--outline"
+                            aria-label={`تحريك الزوج ${pairIndex + 1} للأسفل`}
+                            disabled={pairIndex === content.pairs.length - 1} onClick={() => setContent((current) => {
+                              const targetIndex = pairIndex + 1;
+                              if (targetIndex >= current.pairs.length) return current;
+                              const pairs = [...current.pairs];
+                              [pairs[pairIndex], pairs[targetIndex]] = [pairs[targetIndex], pairs[pairIndex]];
+                              return { ...current, pairs };
+                            })}>↓</button>
+                        </div>
+                      </fieldset>
+                    );
+                  })}
+                  <button type="button" className="button button--small button--outline"
+                    disabled={content.pairs.length >= 8} onClick={() => setContent((current) => current.pairs.length >= 8 ? current : ({
+                      ...current,
+                      pairs: [...current.pairs, {
+                        pairId: `pair-${crypto.randomUUID().replaceAll('-', '').slice(0, 12)}`,
+                        leftItem: { id: `left-${Date.now()}`, label: '', imageAssetId: null },
+                        rightItem: { id: `right-${Date.now() + 1}`, label: '', imageAssetId: null }
+                      }]
+                    }))}>
+                    إضافة زوج جديد ({content.pairs.length}/٨)
+                  </button>
+                </section>
+              ) : content.template === 'sequence-ordering' ? (
+                <section className="admin-library__question-media" aria-label="ترتيب التسلسل">
+                  <div className="admin-picture-matching__heading">
+                    <div>
+                      <h4>عناصر التسلسل</h4>
+                      <p>اربط كل عنصر في الترتيب الصحيح. يُنشئ النظام ترتيبًا تلقائيًا حسب الترتيب النهائي الذي يحدده المسؤول.</p>
+                    </div>
+                    <label>مستوى الصعوبة
+                      <select value={content.difficulty ?? 'beginner'}
+                        onChange={(event) => updateContentField('difficulty', event.target.value)}>
+                        <option value="beginner">مبتدئ</option>
+                        <option value="intermediate">متوسط</option>
+                        <option value="advanced">متقدم</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="admin-sequence-order-mode" role="group" aria-label="طريقة عرض عناصر التسلسل">
+                    <strong>طريقة عرض الصور</strong>
+                    <button
+                      type="button"
+                      className={`button button--small ${content.sequenceOrderMode === 'ordered' ? 'button--primary' : 'button--outline'}`}
+                      aria-pressed={content.sequenceOrderMode === 'ordered'}
+                      onClick={() => updateContentField('sequenceOrderMode', 'ordered')}
+                    >
+                      بالترتيب المحدد
+                    </button>
+                    <button
+                      type="button"
+                      className={`button button--small ${content.sequenceOrderMode !== 'ordered' ? 'button--primary' : 'button--outline'}`}
+                      aria-pressed={content.sequenceOrderMode !== 'ordered'}
+                      onClick={() => updateContentField('sequenceOrderMode', 'random')}
+                    >
+                      عشوائيًا
+                    </button>
+                  </div>
+                  {content.items.map((item, itemIndex) => (
+                    <fieldset className="admin-picture-matching__pair" key={item.id}>
+                      <legend>العنصر {itemIndex + 1}</legend>
+                      <label>اسم العنصر
+                        <input value={item.label ?? ''} maxLength="80" required
+                          onChange={(event) => updateSequenceItem(itemIndex, 'label', event.target.value)} />
+                      </label>
+                      <label>اختر الصورة
+                        <select value={item.imageAssetId ?? ''} onChange={(event) => updateSequenceItem(itemIndex, 'imageAssetId', event.target.value || null)}>
+                          <option value="">بدون صورة</option>
+                          {assetsOfKind('image', item.imageAssetId).map((asset) => (
+                            <option value={asset.id} key={asset.id}>{assetOptionLabel(asset)}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="admin-picture-matching__order">
+                        <button type="button" className="button button--small button--outline"
+                          disabled={itemIndex === 0} onClick={() => moveSequenceItem(itemIndex, -1)}>↑</button>
+                        <button type="button" className="button button--small button--outline"
+                          disabled={itemIndex === content.items.length - 1} onClick={() => moveSequenceItem(itemIndex, 1)}>↓</button>
+                        <button type="button" className="button button--small button--outline"
+                          disabled={content.items.length <= 2} onClick={() => removeSequenceItem(itemIndex)}>حذف</button>
+                      </div>
+                    </fieldset>
+                  ))}
+                  <button type="button" className="button button--small button--outline" onClick={addSequenceItem}>إضافة عنصر جديد</button>
+                </section>
               ) : (
                 <>
                   <label>الأسئلة والاختيارات
@@ -1027,6 +1329,14 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
               </div>
               <div className="admin-library__actions">
                 <button type="submit" className="button button--outline" disabled={busy}>حفظ المسودة</button>
+                <button
+                  type="button"
+                  className="button button--small button--outline"
+                  disabled={busy || !selectedGame}
+                  onClick={() => window.open(`/games/${encodeURIComponent(selectedGame.gameId)}?preview=admin`, '_blank', 'noopener,noreferrer')}
+                >
+                  تجربة اللعبة
+                </button>
                 <button type="button" className="button button--primary" disabled={busy} onClick={() => void publishGame()}>
                   {selectedGame.status === 'published' ? 'حفظ ونشر إصدار جديد' : 'حفظ ونشر اللعبة'}
                 </button>

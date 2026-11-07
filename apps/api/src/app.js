@@ -157,6 +157,7 @@ export function createApp({
       authService,
       authenticationMiddleware,
       childService,
+      gameService,
       gameLibraryService,
       learningPathService,
       subscriptionService,

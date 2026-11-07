@@ -47,6 +47,7 @@ import {
   adminVideoTestResultsSchema
 } from '../validation/adminVideo.js';
 import { requireAdminRequestPermission } from '../auth/permissions.js';
+import { gameInteractionSchema } from '../validation/games.js';
 import {
   administratorRoleSchema,
   createRoleSchema,
@@ -96,6 +97,7 @@ export function createAdminRouter({
   authService,
   authenticationMiddleware,
   childService,
+  gameService,
   gameLibraryService,
   learningPathService,
   subscriptionService,
@@ -450,6 +452,16 @@ export function createAdminRouter({
     router.post('/games', validate(createGameSchema), async (request, response) => {
       const game = await gameLibraryService.createGame(request.authenticated.user, request.body);
       response.status(201).json({ game });
+    });
+
+    router.get('/games/:gameId/preview', validate(gameLibraryParamsSchema, 'params'), async (request, response) => {
+      response.json({ game: await gameLibraryService.getDraftPreview(request.params.gameId) });
+    });
+
+    router.post('/games/:gameId/preview/answer', validate(gameLibraryParamsSchema, 'params'), validate(gameInteractionSchema), async (request, response) => {
+      response.json({
+        answer: await gameService.checkPreviewAnswer(request.params.gameId, request.body)
+      });
     });
 
     router.patch('/games/:gameId', validate(gameLibraryParamsSchema, 'params'), validate(updateGameSchema), async (request, response) => {

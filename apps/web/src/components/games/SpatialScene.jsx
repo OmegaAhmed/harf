@@ -11,6 +11,7 @@ export default function SpatialScene({
   selectedObjectId = null,
   targetRegion = null,
   showTarget = false,
+  targetLabel = '',
   demonstration = false,
   onPointerDown,
   onPointerMove,
@@ -57,7 +58,9 @@ export default function SpatialScene({
             width: `${targetRegion.width / 10}%`,
             height: `${targetRegion.height / 10}%`
           }}
-        />
+        >
+          {targetLabel && <span className="spatial-scene__target-label">{targetLabel}</span>}
+        </div>
       )}
       {spatial.scene.objects.map((item) => {
         const position = positions?.[item.id] ?? item;

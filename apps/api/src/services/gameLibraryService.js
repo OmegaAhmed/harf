@@ -2,16 +2,24 @@ import { AppError } from '../middleware/errors.js';
 import { hasValidSpatialTarget } from '../games/spatialValidation.js';
 
 function contentAssetIds(content) {
+  const pairAssetIds = (content.pairs ?? []).flatMap((pair) => {
+    if (pair.leftItem?.imageAssetId || pair.rightItem?.imageAssetId) {
+      return [pair.leftItem?.imageAssetId, pair.rightItem?.imageAssetId, pair.imageAssetId].filter(Boolean);
+    }
+    return [pair.imageAssetId].filter(Boolean);
+  }).map(String);
   const questionAssetIds = content.questions.flatMap((question) => [
     question.promptImageAssetId,
     question.promptAudioAssetId,
     ...(question.optionImageAssetIds ?? [])
   ].filter(Boolean).map(String));
+  const sequenceAssetIds = (content.items ?? []).map(({ imageAssetId }) => imageAssetId).filter(Boolean).map(String);
   return [...new Set([
     ...(content.companionAnimalImageAssetId ? [String(content.companionAnimalImageAssetId)] : []),
     ...content.assetAssignments.map(({ assetId }) => String(assetId)),
-    ...(content.pairs ?? []).map(({ imageAssetId }) => imageAssetId).filter(Boolean).map(String),
+    ...pairAssetIds,
     ...questionAssetIds,
+    ...sequenceAssetIds,
     ...(content.spatial?.scene?.backgroundAssetId ? [String(content.spatial.scene.backgroundAssetId)] : []),
     ...(content.spatial?.scene?.objects ?? []).map(({ assetId }) => assetId).filter(Boolean).map(String),
     ...(content.spatial?.steps ?? []).map(({ instructionAudioAssetId }) => instructionAudioAssetId)
@@ -20,23 +28,61 @@ function contentAssetIds(content) {
 }
 
 function normalizeContent(content) {
-  if (content.template !== 'picture-matching') return content;
-  const options = content.pairs.map(({ label }) => label);
-  const optionImageAssetIds = content.pairs.map(({ imageAssetId }) => imageAssetId);
-  return {
-    ...content,
-    questions: content.pairs.map((pair, correctAnswerIndex) => ({
-      prompt: `وصل صورة ${pair.label}`,
-      options,
-      correctAnswerIndex,
-      promptImageAssetId: pair.imageAssetId,
-      promptAudioAssetId: null,
-      optionImageAssetIds,
-      difficulty: content.difficulty ?? 'beginner',
-      correctFeedback: 'برافو! ممتاز!',
-      incorrectFeedback: 'حاول مرة تانية!'
-    }))
-  };
+  if (content.template === 'picture-matching') {
+    const options = content.pairs.map(({ label }) => label);
+    const optionImageAssetIds = content.pairs.map(({ imageAssetId }) => imageAssetId);
+    return {
+      ...content,
+      questions: content.pairs.map((pair, correctAnswerIndex) => ({
+        prompt: `وصل صورة ${pair.label}`,
+        options,
+        correctAnswerIndex,
+        promptImageAssetId: pair.imageAssetId,
+        promptAudioAssetId: null,
+        optionImageAssetIds,
+        difficulty: content.difficulty ?? 'beginner',
+        correctFeedback: 'برافو! ممتاز!',
+        incorrectFeedback: 'حاول مرة تانية!'
+      }))
+    };
+  }
+  if (content.template === 'associative-matching') {
+    const rightLabels = content.pairs.map((pair) => pair.rightItem?.label ?? pair.label ?? 'اختيار');
+    const rightImages = content.pairs.map((pair) => pair.rightItem?.imageAssetId ?? pair.imageAssetId ?? null);
+    return {
+      ...content,
+      questions: content.pairs.map((pair, leftIndex) => ({
+        prompt: pair.leftItem?.label ?? pair.label ?? `اختر العلاقة ${leftIndex + 1}`,
+        options: rightLabels,
+        correctAnswerIndex: leftIndex,
+        promptImageAssetId: pair.leftItem?.imageAssetId ?? pair.imageAssetId ?? null,
+        promptAudioAssetId: null,
+        optionImageAssetIds: rightImages,
+        difficulty: content.difficulty ?? 'beginner',
+        correctFeedback: 'رائع! العلاقة صحيحة.',
+        incorrectFeedback: 'حاول مرة أخرى.'
+      }))
+    };
+  }
+  if (content.template === 'sequence-ordering') {
+    const itemCount = Math.max(2, content.items?.length ?? 0);
+    return {
+      ...content,
+      sequenceOrderMode: content.sequenceOrderMode ?? 'random',
+      questions: (content.items ?? []).map((item, index) => ({
+        prompt: item.label || `رتب الصورة ${index + 1}`,
+        options: Array.from({ length: itemCount }, (_, optionIndex) => `الموضع ${optionIndex + 1}`),
+        correctAnswerIndex: (item.correctOrder ?? index + 1) - 1,
+        promptImageAssetId: item.imageAssetId ?? null,
+        promptAudioAssetId: null,
+        optionImageAssetIds: null,
+        difficulty: content.difficulty ?? 'beginner',
+        correctFeedback: 'الترتيب صحيح!',
+        incorrectFeedback: 'حاول مرة أخرى.'
+      }))
+    };
+  }
+  return content;
 }
 
 function publicContent(version, assetMap) {
@@ -76,6 +122,30 @@ function publicContent(version, assetMap) {
         : null
     }))
   } : null;
+  const sequenceItems = content.template === 'sequence-ordering'
+    ? (content.items ?? []).map((item) => ({
+      ...item,
+      imageUrl: item.imageAssetId ? publicAssetUrl(assetMap, item.imageAssetId, 'image') : null,
+      imageAlt: item.imageAssetId ? publicAssetAlt(assetMap, item.imageAssetId, 'image') : ''
+    }))
+    : null;
+  const pairContent = content.template === 'associative-matching' || content.template === 'picture-matching'
+    ? (content.pairs ?? []).map((pair) => ({
+      ...pair,
+      leftItem: pair.leftItem ? {
+        ...pair.leftItem,
+        imageUrl: pair.leftItem.imageAssetId ? publicAssetUrl(assetMap, pair.leftItem.imageAssetId, 'image') : null,
+        imageAlt: pair.leftItem.imageAssetId ? publicAssetAlt(assetMap, pair.leftItem.imageAssetId, 'image') : ''
+      } : null,
+      rightItem: pair.rightItem ? {
+        ...pair.rightItem,
+        imageUrl: pair.rightItem.imageAssetId ? publicAssetUrl(assetMap, pair.rightItem.imageAssetId, 'image') : null,
+        imageAlt: pair.rightItem.imageAssetId ? publicAssetAlt(assetMap, pair.rightItem.imageAssetId, 'image') : ''
+      } : null,
+      imageUrl: pair.imageAssetId ? publicAssetUrl(assetMap, pair.imageAssetId, 'image') : null,
+      imageAlt: pair.imageAssetId ? publicAssetAlt(assetMap, pair.imageAssetId, 'image') : ''
+    }))
+    : null;
   return {
     id: version.gameId,
     template: content.template ?? 'multiple-choice',
@@ -90,7 +160,11 @@ function publicContent(version, assetMap) {
     version: String(version.version),
     questionCount: content.template === 'spatial-relationships'
       ? content.spatial.steps.length
-      : content.questions.length,
+      : content.template === 'sequence-ordering'
+        ? content.items?.length ?? 0
+        : content.template === 'associative-matching' || content.template === 'picture-matching'
+          ? content.pairs?.length ?? content.questions.length
+          : content.questions.length,
     questions: content.questions.map((question) => ({
       prompt: question.prompt,
       options: question.options,
@@ -114,6 +188,9 @@ function publicContent(version, assetMap) {
       } : {})
     })),
     assets,
+    ...(pairContent ? { pairs: pairContent } : {}),
+    ...(sequenceItems ? { items: sequenceItems } : {}),
+    ...(sequenceItems ? { sequenceOrderMode: content.sequenceOrderMode ?? 'random' } : {}),
     ...(spatial ? { spatial } : {})
   };
 }
@@ -158,15 +235,48 @@ export class GameLibraryService {
           publishedContent: publishedVersion?.content ?? null,
           publishedQuestionCount: publishedVersion?.content.template === 'spatial-relationships'
             ? publishedVersion?.content.spatial?.steps?.length ?? 0
-            : publishedVersion?.content.questions.length ?? 0,
+            : publishedVersion?.content.template === 'sequence-ordering'
+              ? publishedVersion?.content.items?.length ?? 0
+              : publishedVersion?.content.template === 'associative-matching' || publishedVersion?.content.template === 'picture-matching'
+                ? publishedVersion?.content.pairs?.length ?? publishedVersion?.content.questions.length ?? 0
+                : publishedVersion?.content.questions.length ?? 0,
           draftContent: definition.draftContent,
           questionCount: definition.draftContent.template === 'spatial-relationships'
             ? definition.draftContent.spatial?.steps?.length ?? 0
-            : definition.draftContent.questions.length,
+            : definition.draftContent.template === 'sequence-ordering'
+              ? definition.draftContent.items?.length ?? 0
+              : definition.draftContent.template === 'associative-matching' || definition.draftContent.template === 'picture-matching'
+                ? definition.draftContent.pairs?.length ?? definition.draftContent.questions.length ?? 0
+                : definition.draftContent.questions.length ?? 0,
           updatedAt: definition.updatedAt,
           isTrial: trialGameIds.includes(definition.gameId)
         };
       }))
+    };
+  }
+
+  async getDraftPreview(gameId) {
+    const definition = await this.repository.findDefinition(gameId);
+    if (!definition) {
+      throw new AppError(404, 'GAME_NOT_FOUND', 'The game was not found.');
+    }
+    const assetMap = new Map((await this.mediaAssetService.listAssets()).map((asset) => [String(asset.id), asset]));
+    const content = normalizeContent(definition.draftContent ?? { template: 'multiple-choice', questions: [], title: '', description: '', companion: '', companionAnimal: '🐢', instructions: '' });
+    return {
+      ...publicContent({ gameId: definition.gameId, version: definition.publishedVersion || 1, content }, assetMap),
+      access: 'trial'
+    };
+  }
+
+  async getDraftScoringGame(gameId) {
+    const definition = await this.repository.findDefinition(gameId);
+    if (!definition?.draftContent) {
+      throw new AppError(404, 'GAME_NOT_FOUND', 'The game was not found.');
+    }
+    return {
+      gameId: definition.gameId,
+      version: String(definition.publishedVersion || 1),
+      content: normalizeContent(definition.draftContent)
     };
   }
 

@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { AppError } from '../middleware/errors.js';
 import { isReadableName } from '../lib/nameValidation.js';
 import { safeError } from '../lib/logger.js';
+import { getRolePermissions } from '../auth/permissions.js';
 import { hashPassword, verifyPassword } from './passwords.js';
 import { NOTIFICATION_TYPES } from './notificationTypes.js';
 
@@ -87,7 +88,7 @@ export function serializeAccount(user) {
     ...(record.role === 'admin' ? {
       adminProfile: { displayName: record.adminProfile?.displayName ?? '' },
       adminRole: adminRole ?? null,
-      permissions: adminRole?.permissions ?? []
+      permissions: getRolePermissions(record)
     } : {}),
     ...(professionalProfile ? { professionalProfile } : {})
   };

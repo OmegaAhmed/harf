@@ -70,10 +70,13 @@ export class GameService {
     parentUserId,
     childId,
     action,
-    position
+    position,
+    preview = false
   }) {
     const game = this.gameLibraryService
-      ? await this.gameLibraryService.getScoringGame(gameId, gameVersion ?? null)
+      ? preview
+        ? await this.gameLibraryService.getDraftScoringGame(gameId)
+        : await this.gameLibraryService.getScoringGame(gameId, gameVersion ?? null)
       : getGame(gameId);
     if (!game) throw new AppError(404, 'GAME_NOT_FOUND', 'The game was not found.');
     const content = this.gameLibraryService ? game.content : game;
@@ -150,6 +153,10 @@ export class GameService {
     }
 
     return { correct };
+  }
+
+  async checkPreviewAnswer(gameId, input) {
+    return this.checkAnswer(gameId, { ...input, preview: true });
   }
 
   async recordChildAttempt(parentUserId, gameId, input) {

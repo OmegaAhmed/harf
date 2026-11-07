@@ -3515,6 +3515,20 @@ test('administrator game library verifies uploads and publishes immutable game v
     body: { gameId: 'managed-content-test', content: gameContent }
   });
   assert.equal(createdGame.status, 201, await createdGame.text());
+  const draftPreview = await request('/admin/games/managed-content-test/preview', {
+    cookie: adminCookie
+  });
+  assert.equal(draftPreview.status, 200);
+  const draftPreviewAnswer = await request('/admin/games/managed-content-test/preview/answer', {
+    method: 'POST',
+    cookie: adminCookie,
+    csrfToken,
+    body: { questionIndex: 0, answerIndex: 0, gameVersion: '1' }
+  });
+  const draftPreviewAnswerPayload = await draftPreviewAnswer.json();
+  assert.equal(draftPreviewAnswer.status, 200, JSON.stringify(draftPreviewAnswerPayload));
+  assert.deepEqual(draftPreviewAnswerPayload.answer, { correct: true });
+
   const forbiddenAssetEdit = await request(`/admin/assets/${asset.id}`, {
     method: 'PATCH',
     cookie: nonAdmin.cookie,

@@ -42,10 +42,10 @@ export const ADMIN_DEFAULT_PERMISSIONS = Object.freeze(
 
 export function getRolePermissions(user) {
   const role = user?.adminRoleId;
-  return role && typeof role === 'object' && role.isActive !== false
-    && Array.isArray(role.permissions)
-    ? role.permissions
-    : [];
+  if (!role || typeof role !== 'object' || role.isActive === false || !Array.isArray(role.permissions)) {
+    return [];
+  }
+  return role.key === 'super-admin' ? ALL_PERMISSIONS : role.permissions;
 }
 
 export function requirePermission(permission) {

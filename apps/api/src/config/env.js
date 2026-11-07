@@ -6,6 +6,9 @@ import dotenv from 'dotenv';
 import { z } from 'zod';
 
 const projectRoot = fileURLToPath(new URL('../../../../', import.meta.url));
+if (process.env.MONGODB_URI?.trim() === '') {
+  delete process.env.MONGODB_URI;
+}
 dotenv.config({ path: path.join(projectRoot, '.env') });
 
 const envSchema = z.object({

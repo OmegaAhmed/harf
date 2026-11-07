@@ -8,6 +8,17 @@ function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
 }
 
+const relationshipLabels = {
+  inside: 'داخل',
+  outside: 'خارج',
+  above: 'فوق',
+  below: 'تحت',
+  front: 'أمام',
+  behind: 'خلف',
+  'next-to': 'بجانب',
+  between: 'بين'
+};
+
 export default function SpatialGameActivity({
   game,
   gameId,
@@ -15,6 +26,7 @@ export default function SpatialGameActivity({
   submissionId,
   muted,
   isTrial,
+  isAdminPreview,
   onCompanionState,
   onStepComplete,
   onComplete
@@ -38,6 +50,8 @@ export default function SpatialGameActivity({
   const currentStep = spatial.steps[stepIndex];
   const stepIncorrectCount = incorrectByStep[stepIndex] ?? 0;
   const activeObject = spatial.scene.objects.find(({ id }) => id === currentStep.movableObjectId);
+  const targetObject = spatial.scene.objects.find(({ id }) => id === currentStep.targetObjectId);
+  const secondTargetObject = spatial.scene.objects.find(({ id }) => id === currentStep.secondTargetObjectId);
 
   const speakInstruction = () => {
     if (muted) return;
@@ -58,6 +72,12 @@ export default function SpatialGameActivity({
     utterance.volume = volume;
     window.speechSynthesis.speak(utterance);
   };
+
+  useEffect(() => {
+    setSelectedObjectId(currentStep.movableObjectId);
+    setFeedback('');
+    setShowDemonstration(false);
+  }, [stepIndex, currentStep.movableObjectId]);
 
   useEffect(() => {
     if (!isTrial) void postEvent('session_started').catch((requestError) => setError(requestError.message));
@@ -83,7 +103,10 @@ export default function SpatialGameActivity({
       ...(isTrial ? {} : { childId, submissionId }),
       ...(position ? { position } : {})
     };
-    return apiRequest(`/api/v1/games/${encodeURIComponent(gameId)}/answer`, {
+    const answerPath = isAdminPreview
+      ? `/api/v1/admin/games/${encodeURIComponent(gameId)}/preview/answer`
+      : `/api/v1/games/${encodeURIComponent(gameId)}/answer`;
+    return apiRequest(answerPath, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -118,7 +141,6 @@ export default function SpatialGameActivity({
         return;
       }
 
-      setSelectedObjectId('');
       setFeedback('ممتاز! حطيتها في المكان الصحيح!');
       onCompanionState('correct');
       onStepComplete(stepIndex);
@@ -211,6 +233,19 @@ export default function SpatialGameActivity({
     if (point) await placeAt(point.x - activeObject.width / 2, point.y - activeObject.height / 2);
   };
 
+  const resetActiveObject = () => {
+    const original = spatial.scene.objects.find(({ id }) => id === currentStep.movableObjectId);
+    if (!original) return;
+    const next = {
+      ...positionsRef.current,
+      [original.id]: { x: original.x, y: original.y }
+    };
+    positionsRef.current = next;
+    setPositions(next);
+    setSelectedObjectId(original.id);
+    setFeedback('');
+  };
+
   const replay = async () => {
     try {
       await postEvent('instruction_replay');
@@ -232,21 +267,34 @@ export default function SpatialGameActivity({
 
   return (
     <section className="game-activity spatial-activity" aria-labelledby="spatial-instruction">
-      <GameProgress current={stepIndex} total={spatial.steps.length} label="التعليمات المكتملة" />
+      <GameProgress current={stepIndex + 1} total={spatial.steps.length} label="الخطوة" />
       <header className="spatial-activity__instruction">
-        <span>المستوى {spatial.level} · الخطوة {stepIndex + 1} من {spatial.steps.length}</span>
+        <span>المستوى {spatial.level}</span>
         <h2 id="spatial-instruction">{currentStep.instruction}</h2>
+        <p className="spatial-activity__goal">
+          حرّك <strong>{activeObject.label}</strong>
+          {' '}{relationshipLabels[currentStep.relationship] ?? ''}{' '}
+          <strong>{currentStep.relationship === 'between'
+            ? `${targetObject?.label ?? ''} و${secondTargetObject?.label ?? ''}`
+            : targetObject?.label ?? ''}</strong>
+        </p>
         <button type="button" className="button button--small button--outline"
           disabled={muted || busy} onClick={() => void replay()}>أعد سماع التعليمة</button>
       </header>
-      <label className="spatial-activity__volume">مستوى الصوت
-        <input type="range" min="0" max="1" step="0.1" value={volume} disabled={muted}
-          aria-label="مستوى صوت التعليمة"
-          onChange={(event) => setVolume(Number(event.target.value))} />
-      </label>
-      <p className="spatial-activity__hint" aria-live="polite">
-        {selectedObjectId ? 'المس المكان الذي تريد نقل العنصر إليه، أو اسحبه بإصبعك أو الفأرة.' : 'اسحب العنصر إلى المكان المطلوب، أو المس العنصر ثم المكان.'}
-      </p>
+      <div className="spatial-activity__how-to" role="status" aria-live="polite">
+        <span aria-hidden="true">👆</span>
+        <p>
+          {selectedObjectId
+            ? <>المس المنطقة الخضراء لوضع <strong>{activeObject.label}</strong>، أو اسحبها إليها.</>
+            : <>اختر <strong>{activeObject.label}</strong> ثم المس المنطقة الخضراء.</>}
+        </p>
+        <label className="spatial-activity__volume">
+          <span>الصوت</span>
+          <input type="range" min="0" max="1" step="0.1" value={volume} disabled={muted}
+            aria-label="مستوى صوت التعليمة"
+            onChange={(event) => setVolume(Number(event.target.value))} />
+        </label>
+      </div>
       <div className="spatial-activity__scene-wrap">
         <div ref={sceneRef} className="spatial-activity__scene" tabIndex="0"
           onKeyDown={(event) => {
@@ -282,6 +330,7 @@ export default function SpatialGameActivity({
             selectedObjectId={selectedObjectId}
             targetRegion={currentStep.targetRegion}
             showTarget
+            targetLabel="ضع هنا"
             demonstration={showDemonstration}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
@@ -291,6 +340,10 @@ export default function SpatialGameActivity({
             onSceneClick={(event) => void handleSceneClick(event)}
           />
         </div>
+      </div>
+      <div className="spatial-activity__actions">
+        <button type="button" className="button button--small button--outline"
+          disabled={busy} onClick={resetActiveObject}>أعد العنصر إلى مكانه</button>
       </div>
       {spatial.assistance.enabled && stepIncorrectCount >= spatial.assistance.demonstrationAfter && showHint && (
         <button type="button" className="button button--small button--outline"

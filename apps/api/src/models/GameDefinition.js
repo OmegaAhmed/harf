@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 const gameDefinitionSchema = new mongoose.Schema({
   gameId: { type: String, required: true, unique: true, match: /^[a-z0-9-]{1,60}$/ },
-  template: { type: String, enum: ['multiple-choice', 'matching-pairs', 'picture-matching', 'audio-choice', 'spatial-relationships'], required: true, default: 'multiple-choice' },
+  template: { type: String, enum: ['multiple-choice', 'matching-pairs', 'picture-matching', 'associative-matching', 'sequence-ordering', 'audio-choice', 'spatial-relationships'], required: true, default: 'multiple-choice' },
   draftContent: { type: mongoose.Schema.Types.Mixed, required: true },
   draftAssetIds: [{ type: String, match: /^[a-f\d]{24}$/i }],
   status: { type: String, enum: ['draft', 'published', 'unpublished'], default: 'draft', required: true },

@@ -22,7 +22,26 @@ const picturePair = z.object({
   id: z.string().regex(/^[a-z0-9-]{1,30}$/),
   label: delimitedText(80),
   imageAssetId: mediaAssetId.nullable()
-}).strict();
+}).strict().passthrough();
+const associativePair = z.object({
+  pairId: z.string().regex(/^[a-z0-9-]{1,30}$/),
+  leftItem: z.object({
+    id: z.string().regex(/^[a-z0-9-]{1,30}$/),
+    imageAssetId: mediaAssetId.nullable(),
+    label: delimitedText(80)
+  }).strict().passthrough(),
+  rightItem: z.object({
+    id: z.string().regex(/^[a-z0-9-]{1,30}$/),
+    imageAssetId: mediaAssetId.nullable(),
+    label: delimitedText(80)
+  }).strict().passthrough()
+}).strict().passthrough();
+const sequenceItem = z.object({
+  id: z.string().regex(/^[a-z0-9-]{1,30}$/),
+  imageAssetId: mediaAssetId.nullable().optional(),
+  label: z.string().trim().max(80).optional().default(''),
+  correctOrder: z.number().int().min(1).max(20).optional()
+}).strict().passthrough();
 const spatialObject = z.object({
   id: z.string().regex(/^[a-z0-9-]{1,30}$/),
   label: z.string().trim().min(1).max(80),
@@ -111,7 +130,7 @@ const eventAssignment = z.object({
   assetId: z.string().regex(/^[a-f\d]{24}$/i)
 }).strict();
 const gameContent = z.object({
-  template: z.enum(['multiple-choice', 'matching-pairs', 'picture-matching', 'audio-choice', 'spatial-relationships']).default('multiple-choice'),
+  template: z.enum(['multiple-choice', 'matching-pairs', 'picture-matching', 'associative-matching', 'sequence-ordering', 'audio-choice', 'spatial-relationships']).default('multiple-choice'),
   title: z.string().trim().min(1).max(100),
   description: z.string().trim().min(1).max(240),
   companion: z.string().trim().min(1).max(80),
@@ -119,7 +138,9 @@ const gameContent = z.object({
   companionAnimalImageAssetId: mediaAssetId.nullable().optional(),
   instructions: z.string().trim().min(1).max(500),
   questions: z.array(question).max(20).default([]),
-  pairs: z.array(picturePair).min(2).max(8).optional(),
+  pairs: z.array(z.union([picturePair, associativePair])).min(2).max(8).optional(),
+  items: z.array(sequenceItem).min(2).max(20).optional(),
+  sequenceOrderMode: z.enum(['ordered', 'random']).optional().default('random'),
   spatial: spatialContent.optional(),
   difficulty: z.enum(['beginner', 'intermediate', 'advanced']).optional().default('beginner'),
   assetAssignments: z.array(eventAssignment).max(40)
@@ -134,11 +155,20 @@ const gameContent = z.object({
     ? Boolean(content.spatial && content.questions.length === 0)
     : content.template === 'picture-matching'
     ? Boolean(content.pairs?.length
-      && new Set(content.pairs.map(({ id }) => id)).size === content.pairs.length
-      && new Set(content.pairs.filter(({ imageAssetId }) => imageAssetId).map(({ imageAssetId }) => imageAssetId)).size
-        === content.pairs.filter(({ imageAssetId }) => imageAssetId).length)
-    : content.questions.length > 0
-), { message: 'Spatial games require a valid scene and steps, picture matching requires two to eight uniquely identified pairs, and other games require at least one question.' });
+      && new Set(content.pairs.map((pair) => pair.id ?? pair.pairId)).size === content.pairs.length
+      && new Set(content.pairs.filter((pair) => pair.imageAssetId ?? pair.leftItem?.imageAssetId)
+        .map((pair) => pair.imageAssetId ?? pair.leftItem?.imageAssetId)).size
+        === content.pairs.filter((pair) => pair.imageAssetId ?? pair.leftItem?.imageAssetId).length)
+    : content.template === 'associative-matching'
+      ? Boolean(content.pairs?.length
+        && new Set(content.pairs.map((pair) => pair.pairId ?? pair.id)).size === content.pairs.length
+        && content.pairs.every((pair) => pair.leftItem?.imageAssetId && pair.rightItem?.imageAssetId))
+      : content.template === 'sequence-ordering'
+        ? Boolean(content.items?.length
+          && new Set(content.items.map((item) => item.id)).size === content.items.length
+          && content.items.every((item) => item.correctOrder ? item.correctOrder >= 1 && item.correctOrder <= content.items.length : true))
+        : content.questions.length > 0
+), { message: 'Spatial games require a valid scene and steps, picture and association games require valid pairs, sequence games require ordered items, and other games require at least one question.' });
 
 export const createGameSchema = z.object({
   gameId,
