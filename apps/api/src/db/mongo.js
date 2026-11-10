@@ -32,7 +32,7 @@ export async function connectMongo(uri, { isProduction, logger }) {
   mongoose.set('strictQuery', true);
   mongoose.set('autoIndex', !isProduction);
   try {
-    await mongoose.connect(uri, { dbName: 'harf', serverSelectionTimeoutMS: 5000 });
+    await mongoose.connect(uri, { dbName: 'harf', serverSelectionTimeoutMS: 30_000 });
   } catch (error) {
     logger.error({ error: safeError(error) }, 'MongoDB connection failed.');
     throw new Error('MongoDB connection failed. Verify MONGODB_URI, network access, and database user permissions.');

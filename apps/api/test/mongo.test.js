@@ -17,7 +17,7 @@ test('MongoDB connects to the existing harf database', async (t) => {
   }), true);
   assert.deepEqual(connect.mock.calls[0].arguments[1], {
     dbName: 'harf',
-    serverSelectionTimeoutMS: 5000
+    serverSelectionTimeoutMS: 30_000
   });
   assert.deepEqual(logger.info.mock.calls[0].arguments, ['MongoDB connection established.']);
 });
