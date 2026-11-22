@@ -4,6 +4,19 @@
   "installCommand": "npm ci --include=dev",
   "buildCommand": "npm run build",
   "outputDirectory": "apps/web/dist",
+  "routes": [
+    {
+      "src": "/api/v1/(.*)",
+      "dest": "/api/harf.js",
+      "transforms": [
+        {
+          "type": "request.path",
+          "op": "set",
+          "args": "/api/v1/$1"
+        }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/:path((?!api/|api$|assets/|assets$|.*\\.).*)",
