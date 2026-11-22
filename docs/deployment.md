@@ -49,7 +49,7 @@ For secure browser testing, set `APP_ORIGIN` and `CLIENT_ORIGINS` to the exact H
 
 ## Experimental Vercel deployment
 
-Configure the Vercel Project Root Directory as the repository root (`.`). The root `vercel.json` installs all npm workspaces with `npm ci --include=dev`, runs `npm run build`, and serves the Vite output from `apps/web/dist`. The root `index.js` is the documented Express entry point; it delegates requests to the shared API bootstrap. API paths remain `/api/v1/*`; the SPA rewrite explicitly excludes `/api` paths.
+Configure the Vercel Project Root Directory as the repository root (`.`) and the framework preset as Vite. The root `vercel.json` installs all npm workspaces with `npm ci --include=dev`, runs `npm run build`, and serves the Vite output from `apps/web/dist`. The root `api/[...path].js` exposes the existing Express serverless handler as one catch-all Node.js Function; it delegates to the shared API bootstrap without duplicating routes or middleware. API paths remain `/api/v1/*`. The SPA rewrite excludes `/api`, `/assets`, and paths with file extensions so API calls and missing static assets do not receive the SPA HTML fallback.
 
 Set deployment variables through Vercel's Environment Variables settings. Do not copy production credentials into Preview or Development environments.
 
