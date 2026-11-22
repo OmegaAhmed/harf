@@ -622,7 +622,41 @@ function createMemoryRepository() {
           sessionEndedAt: now,
           privateSpecialistNotes: privateNotes,
           ...(hasMeeting ? { meeting: { ...appointment.meeting, status: 'ended', endedAt: now } } : {}),
-          parentProgressReport: { ...structuredClone(parentReport), createdAt: now }
+          parentProgressReport: parentReport ? {
+            ...structuredClone(parentReport),
+            status: 'published',
+            createdAt: now,
+            updatedAt: now,
+            publishedAt: now
+          } : null
+        });
+        return structuredClone(appointment);
+      },
+      async saveSessionReportDraft(appointmentId, specialistUserId, report, createdAt, now) {
+        const appointment = appointments.get(String(appointmentId));
+        if (!appointment || String(appointment.specialistUserId) !== String(specialistUserId)
+          || appointment.status !== 'accepted' || appointment.sessionStatus !== 'completed'
+          || (appointment.parentProgressReport?.status !== 'draft'
+            && appointment.parentProgressReport?.createdAt)) return null;
+        appointment.parentProgressReport = {
+          ...structuredClone(report),
+          status: 'draft',
+          createdAt: appointment.parentProgressReport?.createdAt ?? createdAt,
+          updatedAt: now,
+          publishedAt: null
+        };
+        return structuredClone(appointment);
+      },
+      async publishSessionReport(appointmentId, specialistUserId, now) {
+        const appointment = appointments.get(String(appointmentId));
+        if (!appointment || String(appointment.specialistUserId) !== String(specialistUserId)
+          || appointment.status !== 'accepted' || appointment.sessionStatus !== 'completed'
+          || appointment.parentProgressReport?.status !== 'draft'
+          || !appointment.parentProgressReport.sessionSummary) return null;
+        Object.assign(appointment.parentProgressReport, {
+          status: 'published',
+          updatedAt: now,
+          publishedAt: now
         });
         return structuredClone(appointment);
       },
@@ -1066,6 +1100,40 @@ function createMemoryRepository() {
       return {
         attempts: matchingAttempts.slice((page - 1) * limit, page * limit),
         total: matchingAttempts.length
+      };
+    },
+    async getChildProgressAnalytics(parentUserId, childId, { from, to, bucketUnit }) {
+      const matchingAttempts = gameAttempts.filter((attempt) => (
+        String(attempt.parentUserId) === String(parentUserId)
+        && String(attempt.childId) === String(childId)
+        && attempt.completedAt >= from
+        && attempt.completedAt < to
+      ));
+      const bucketDate = (date) => {
+        const bucket = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+        if (bucketUnit === 'week') bucket.setUTCDate(bucket.getUTCDate() - ((bucket.getUTCDay() + 6) % 7));
+        return bucket;
+      };
+      const grouped = new Map();
+      const gameCounts = new Map();
+      const activeDays = new Set(matchingAttempts.map(({ completedAt }) => completedAt.toISOString().slice(0, 10)));
+      for (const attempt of matchingAttempts) {
+        gameCounts.set(attempt.gameId, (gameCounts.get(attempt.gameId) ?? 0) + 1);
+        const bucket = bucketDate(attempt.completedAt);
+        const key = `${attempt.gameId}:${bucket.toISOString()}`;
+        const group = grouped.get(key) ?? { gameId: attempt.gameId, date: bucket, attempts: 0, scoreTotal: 0 };
+        group.attempts += 1;
+        group.scoreTotal += (attempt.correctCount / attempt.totalQuestions) * 100;
+        grouped.set(key, group);
+      }
+      return {
+        totalAttempts: matchingAttempts.length,
+        activeDays: activeDays.size,
+        games: [...gameCounts].map(([gameId, attempts]) => ({ gameId, attempts })),
+        series: [...grouped.values()].map(({ scoreTotal, ...group }) => ({
+          ...group,
+          averageScore: Math.round((scoreTotal / group.attempts) * 10) / 10
+        }))
       };
     }
   };
@@ -2062,20 +2130,137 @@ test('specialist schedules reserve overlapping slots atomically and requests exp
     method: 'POST',
     cookie: specialist.cookie,
     csrfToken: specialist.csrfToken,
-    body: reportBody
+    body: { privateNotes: reportBody.privateNotes }
   });
   const specialistSessionData = (await completedSession.json()).appointment;
   assert.equal(specialistSessionData.sessionStatus, 'completed');
   assert.equal(specialistSessionData.meetingStatus, 'ended');
   assert.equal(specialistSessionData.privateSpecialistNotes, 'ملاحظات مهنية خاصة بالأخصائي.');
-  assert.equal(specialistSessionData.parentProgressReport.summary, 'تدرب الطفل على تمييز الأصوات من خلال نشاط تعليمي.');
+  assert.equal(specialistSessionData.parentProgressReport, null);
   const parentSessionData = (await (await request(`/appointments/${sessionAppointment.id}`, {
     cookie: appointmentOwner.cookie
   })).json()).appointment;
   assert.equal(parentSessionData.sessionStatus, 'completed');
   assert.equal(new Date(parentSessionData.sessionEndedAt).getTime(), sessionStart.getTime());
-  assert.equal(parentSessionData.parentProgressReport.summary, specialistSessionData.parentProgressReport.summary);
   assert.equal(Object.hasOwn(parentSessionData, 'privateSpecialistNotes'), false);
+
+  const reportPath = `/appointments/${sessionAppointment.id}/session-report`;
+  assert.equal((await request(reportPath, {
+    method: 'PUT',
+    cookie: unrelatedSpecialist.cookie,
+    csrfToken: unrelatedSpecialist.csrfToken,
+    body: {}
+  })).status, 404);
+  assert.equal((await request(reportPath, {
+    method: 'PUT',
+    cookie: appointmentOwner.cookie,
+    csrfToken: appointmentOwner.csrfToken,
+    body: {}
+  })).status, 403);
+  const draftResponse = await request(reportPath, {
+    method: 'PUT',
+    cookie: specialist.cookie,
+    csrfToken: specialist.csrfToken,
+    body: {}
+  });
+  assert.equal(draftResponse.status, 200);
+  assert.equal((await draftResponse.json()).appointment.parentProgressReport.status, 'draft');
+  assert.equal((await request(`${reportPath}/publish`, {
+    method: 'POST',
+    cookie: unrelatedSpecialist.cookie,
+    csrfToken: unrelatedSpecialist.csrfToken,
+    body: {}
+  })).status, 404);
+  assert.equal((await request(`${reportPath}/publish`, {
+    method: 'POST',
+    cookie: appointmentOwner.cookie,
+    csrfToken: appointmentOwner.csrfToken,
+    body: {}
+  })).status, 403);
+  const draftParentRead = (await (await request(`/appointments/${sessionAppointment.id}`, {
+    cookie: appointmentOwner.cookie
+  })).json()).appointment;
+  assert.equal(Object.hasOwn(draftParentRead, 'parentProgressReport'), false);
+  const incompletePublish = await request(`${reportPath}/publish`, {
+    method: 'POST',
+    cookie: specialist.cookie,
+    csrfToken: specialist.csrfToken,
+    body: {}
+  });
+  assert.equal(incompletePublish.status, 409);
+
+  const structuredReport = {
+    sessionSummary: 'تدرب الطفل على تمييز الأصوات.',
+    sessionGoals: 'تمييز الأصوات المتقاربة.',
+    activitiesPerformed: 'لعب نشاط اختيار الصوت المطابق.',
+    specialistObservations: 'استجاب الطفل للتلميحات اللفظية.',
+    positiveAchievements: 'أكمل النشاط باستقلالية أكبر.',
+    furtherPractice: 'تكرار الأصوات المتقاربة.',
+    parentRecommendations: 'التدرب لمدة قصيرة يوميًا.',
+    nextSessionPlan: 'مراجعة التمييز السمعي.'
+  };
+  const updatedDraft = await request(reportPath, {
+    method: 'PUT',
+    cookie: specialist.cookie,
+    csrfToken: specialist.csrfToken,
+    body: structuredReport
+  });
+  assert.equal(updatedDraft.status, 200);
+  const draftAppointments = (await (await request('/appointments', { cookie: appointmentOwner.cookie })).json()).appointments;
+  assert.equal(Object.hasOwn(draftAppointments.find(({ id }) => id === sessionAppointment.id).parentProgressReport ?? {}, 'sessionSummary'), false);
+  assert.equal(storedNotifications.filter((item) => (
+    String(item.resourceId) === sessionAppointment.id
+    && item.dedupeKey === `session-report-published:${sessionAppointment.id}`
+  )).length, 0);
+  await childService.recordConsent(appointmentOwner.user._id, appointmentChildId, {
+    consentType: 'progress_reports',
+    granted: false
+  });
+  const withdrawnDraft = (await (await request(`/appointments/${sessionAppointment.id}`, {
+    cookie: appointmentOwner.cookie
+  })).json()).appointment;
+  assert.equal(Object.hasOwn(withdrawnDraft, 'parentProgressReport'), false);
+  await childService.recordConsent(appointmentOwner.user._id, appointmentChildId, {
+    consentType: 'progress_reports',
+    granted: true
+  });
+  const publishedReport = await request(`${reportPath}/publish`, {
+    method: 'POST',
+    cookie: specialist.cookie,
+    csrfToken: specialist.csrfToken,
+    body: {}
+  });
+  assert.equal(publishedReport.status, 200);
+  const publishedData = (await publishedReport.json()).appointment.parentProgressReport;
+  assert.equal(publishedData.status, 'published');
+  assert.ok(publishedData.publishedAt);
+  const parentPublishedReport = (await (await request(`/appointments/${sessionAppointment.id}`, {
+    cookie: appointmentOwner.cookie
+  })).json()).appointment.parentProgressReport;
+  assert.equal(parentPublishedReport.sessionSummary, structuredReport.sessionSummary);
+  assert.equal(parentPublishedReport.nextSessionPlan, structuredReport.nextSessionPlan);
+  const parentReportList = (await (await request('/appointments', { cookie: appointmentOwner.cookie })).json()).appointments;
+  assert.equal(parentReportList.find(({ id }) => id === sessionAppointment.id).parentProgressReport.status, 'published');
+  assert.equal((await request(`/appointments/${sessionAppointment.id}`, {
+    cookie: unrelatedParent.cookie
+  })).status, 404);
+  const reportNotificationCount = storedNotifications.filter((item) => (
+    String(item.resourceId) === sessionAppointment.id
+    && item.dedupeKey === `session-report-published:${sessionAppointment.id}`
+  )).length;
+  assert.equal(reportNotificationCount, 1);
+  const repeatedPublish = await request(`${reportPath}/publish`, {
+    method: 'POST',
+    cookie: specialist.cookie,
+    csrfToken: specialist.csrfToken,
+    body: {}
+  });
+  assert.equal(repeatedPublish.status, 200);
+  assert.equal(storedNotifications.filter((item) => (
+    String(item.resourceId) === sessionAppointment.id
+    && item.dedupeKey === `session-report-published:${sessionAppointment.id}`
+  )).length, reportNotificationCount);
+
   await childService.recordConsent(appointmentOwner.user._id, appointmentChildId, {
     consentType: 'progress_reports',
     granted: false
@@ -2793,6 +2978,20 @@ test('games provide an anonymous trial and persist parent-owned child results on
   assert.equal((await filteredHistory.json()).total, 0);
   assert.equal((await request(`/children/${child.id}/game-attempts`, { cookie: otherParent.cookie })).status, 404);
   assert.equal((await request(`/children/${child.id}/game-attempts?limit=51`, { cookie: parent.cookie })).status, 400);
+  const progressAnalyticsResponse = await request(
+    `/children/${child.id}/progress-analytics?period=weekly&gameId=word-sounds`,
+    { cookie: parent.cookie }
+  );
+  assert.equal(progressAnalyticsResponse.status, 200);
+  const progressAnalytics = (await progressAnalyticsResponse.json()).analytics;
+  assert.equal(progressAnalytics.totalAttempts, 2);
+  assert.equal(progressAnalytics.activeDays, 1);
+  assert.deepEqual(progressAnalytics.games.map(({ gameId }) => gameId), ['word-sounds']);
+  assert.equal(progressAnalytics.buckets.length, 1);
+  assert.equal((await request(
+    `/children/${child.id}/progress-analytics?period=weekly`,
+    { cookie: otherParent.cookie }
+  )).status, 404);
 
   const forgedCount = await request('/games/word-sounds/attempts', {
     method: 'POST',

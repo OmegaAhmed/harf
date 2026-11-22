@@ -105,6 +105,22 @@ export function permissionForAdminRequest(method, requestPath) {
     return isRead(method) ? 'learningPaths.view' : 'learningPaths.manage';
   }
   if (/^\/learning-paths\/[^/]+$/.test(requestPath)) return 'learningPaths.manage';
+  if (requestPath === '/learning-levels' || /^\/learning-levels\/[^/]+$/.test(requestPath)) {
+    return isRead(method) ? 'learningPaths.view' : 'learningPaths.manage';
+  }
+  if (/^\/learning-paths\/[^/]+\/learning-levels\/reorder$/.test(requestPath)) {
+    return 'learningPaths.manage';
+  }
+  if (requestPath === '/rewards' || /^\/rewards\/[^/]+$/.test(requestPath)) {
+    return isRead(method) ? 'learningPaths.view' : 'learningPaths.manage';
+  }
+  if (requestPath === '/gamification-settings') {
+    return isRead(method) ? 'learningPaths.view' : 'learningPaths.manage';
+  }
+  if (requestPath === '/reward-transactions') return 'learningPaths.view';
+  if (requestPath === '/gamification-children' || /^\/gamification-children\/[^/]+\/rewards$/.test(requestPath)) {
+    return 'children.view';
+  }
   if (requestPath === '/learning-questionnaire') {
     return isRead(method) ? 'questionnaires.view' : 'questionnaires.manage';
   }

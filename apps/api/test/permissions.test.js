@@ -69,6 +69,12 @@ test('admin endpoints map to centralized permissions and unknown endpoints fail 
   assert.equal(permissionForAdminRequest('PATCH', '/accounts/0123456789abcdef01234567/approval'), 'users.approve');
   assert.equal(permissionForAdminRequest('POST', '/payments/0123456789abcdef01234567/review'), 'payments.verify');
   assert.equal(permissionForAdminRequest('PUT', '/learning-questionnaire'), 'questionnaires.manage');
+  assert.equal(permissionForAdminRequest('GET', '/learning-levels'), 'learningPaths.view');
+  assert.equal(permissionForAdminRequest('POST', '/learning-levels'), 'learningPaths.manage');
+  assert.equal(permissionForAdminRequest('PUT', '/learning-levels/0123456789abcdef01234567'), 'learningPaths.manage');
+  assert.equal(permissionForAdminRequest('PATCH', '/learning-paths/vocabulary/learning-levels/reorder'), 'learningPaths.manage');
+  assert.equal(permissionForAdminRequest('GET', '/rewards'), 'learningPaths.view');
+  assert.equal(permissionForAdminRequest('DELETE', '/rewards/0123456789abcdef01234567'), 'learningPaths.manage');
   assert.deepEqual(permissionForAdminRequest('GET', '/reports'), ['reports.view', 'reports.financial']);
   assert.equal(permissionForAdminRequest('GET', '/unregistered-route'), null);
 });

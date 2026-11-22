@@ -42,6 +42,7 @@ export function createApp({
   gameService,
   gameLibraryService,
   learningPathService,
+  gamificationService,
   subscriptionService,
   appointmentService,
   specialistDocumentService,
@@ -160,6 +161,7 @@ export function createApp({
       gameService,
       gameLibraryService,
       learningPathService,
+      gamificationService,
       subscriptionService,
       reportService,
       notificationService,
@@ -177,7 +179,8 @@ export function createApp({
       app.use(`${API_PREFIX}/specialist`, databaseMiddleware);
       app.use(`${API_PREFIX}/specialist`, createSpecialistRouter({
         authenticationMiddleware,
-        appointmentService
+        appointmentService,
+        gamificationService
       }));
       app.use(`${API_PREFIX}/appointments`, databaseMiddleware);
       app.use(`${API_PREFIX}/appointments`, createAppointmentsRouter({
@@ -198,6 +201,7 @@ export function createApp({
         childService,
         gameService,
         learningPathService,
+        gamificationService,
         subscriptionService,
         appointmentService,
         authenticationMiddleware

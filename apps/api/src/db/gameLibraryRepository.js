@@ -2,6 +2,8 @@ import { GameDefinition } from '../models/GameDefinition.js';
 import { GameSetting } from '../models/GameSetting.js';
 import { GameVersion } from '../models/GameVersion.js';
 import { MediaAsset } from '../models/MediaAsset.js';
+import { LearningLevel } from '../models/LearningLevel.js';
+import { RewardDefinition } from '../models/RewardDefinition.js';
 import { getGame } from '../games/catalog.js';
 
 const BUILT_IN_GAME_IDS = ['first-letter-trial', 'word-sounds', 'word-match', 'matching-pairs', 'animal-sounds'];
@@ -120,14 +122,23 @@ export function createGameLibraryRepository() {
       return GameVersion.findOne({ gameId, version }).lean();
     },
     async listPublishedVersions() {
-      const definitions = await GameDefinition.find({ status: 'published', publishedVersion: { $gt: 0 } })
-        .select('gameId')
-        .lean();
+      const [definitions, levelAssets, rewardAssets] = await Promise.all([
+        GameDefinition.find({ status: 'published', publishedVersion: { $gt: 0 } })
+          .select('gameId').lean(),
+        LearningLevel.find({ active: true, coverImageAssetId: { $ne: null } })
+          .distinct('coverImageAssetId'),
+        RewardDefinition.find({ active: true, imageAssetId: { $ne: null } })
+          .distinct('imageAssetId')
+      ]);
       const gameIds = definitions.map(({ gameId }) => gameId);
-      if (gameIds.length === 0) return [];
-      return GameVersion.find({ gameId: { $in: gameIds } })
-        .select('assetIds')
-        .lean();
+      const versions = gameIds.length
+        ? await GameVersion.find({ gameId: { $in: gameIds } }).select('assetIds').lean()
+        : [];
+      return [
+        ...versions,
+        ...(levelAssets.length ? [{ assetIds: levelAssets.map(String) }] : []),
+        ...(rewardAssets.length ? [{ assetIds: rewardAssets.map(String) }] : [])
+      ];
     },
     getSetting(key) {
       return GameSetting.findOne({ key }).lean();
@@ -159,11 +170,13 @@ export function createGameLibraryRepository() {
       ).lean();
     },
     async isAssetReferenced(assetId) {
-      const [draftReference, versionReference] = await Promise.all([
+      const [draftReference, versionReference, levelReference, rewardReference] = await Promise.all([
         GameDefinition.exists({ draftAssetIds: assetId }),
-        GameVersion.exists({ assetIds: assetId })
+        GameVersion.exists({ assetIds: assetId }),
+        LearningLevel.exists({ coverImageAssetId: assetId }),
+        RewardDefinition.exists({ imageAssetId: assetId })
       ]);
-      return Boolean(draftReference || versionReference);
+      return Boolean(draftReference || versionReference || levelReference || rewardReference);
     },
     async listAssetUsage(assetId) {
       const [definitions, versions] = await Promise.all([
@@ -212,13 +225,35 @@ export function createGameLibraryRepository() {
       versions.forEach(({ gameId, version, content }) => {
         addContentUses(gameId, content.title, 'نسخة منشورة', version, content);
       });
+      const [levels, rewards] = await Promise.all([
+        LearningLevel.find({ coverImageAssetId: assetId }).select('title learningPathKey').lean(),
+        RewardDefinition.find({ imageAssetId: assetId }).select('name type').lean()
+      ]);
+      levels.forEach(({ title, learningPathKey }) => {
+        uses.push({
+          gameId: learningPathKey,
+          title,
+          source: 'مستوى تعلّم',
+          version: null,
+          location: 'صورة غلاف المستوى'
+        });
+      });
+      rewards.forEach(({ name, type }) => {
+        uses.push({
+          gameId: type,
+          title: name,
+          source: 'مكافأة',
+          version: null,
+          location: 'صورة المكافأة'
+        });
+      });
       return uses;
     },
-    replaceDraftAssetReferences(oldAssetId, newAssetId) {
+    async replaceDraftAssetReferences(oldAssetId, newAssetId) {
       const replaceReference = (value) => ({
         $cond: [{ $eq: [value, oldAssetId] }, newAssetId, value]
       });
-      return GameDefinition.updateMany(
+      await GameDefinition.updateMany(
         { draftAssetIds: oldAssetId },
         [{
           $set: {
@@ -301,6 +336,16 @@ export function createGameLibraryRepository() {
           }
         }]
       );
+      await Promise.all([
+        LearningLevel.updateMany(
+          { coverImageAssetId: oldAssetId },
+          { $set: { coverImageAssetId: newAssetId } }
+        ),
+        RewardDefinition.updateMany(
+          { imageAssetId: oldAssetId },
+          { $set: { imageAssetId: newAssetId } }
+        )
+      ]);
     },
     deleteAsset(assetId) {
       return MediaAsset.findByIdAndDelete(assetId);
