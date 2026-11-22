@@ -3,6 +3,8 @@ import { safeError } from '../lib/logger.js';
 
 let connectionEventsRegistered = false;
 let disconnecting = false;
+let connectionPromise = null;
+let connectionTarget = null;
 
 function registerConnectionEvents(logger) {
   if (connectionEventsRegistered) return;
@@ -21,24 +23,55 @@ function registerConnectionEvents(logger) {
   });
 }
 
-export async function connectMongo(uri, { isProduction, logger }) {
+export async function connectMongo(uri, { isProduction, logger, databaseName }) {
   if (!uri) {
     if (isProduction) throw new Error('MONGODB_URI is required in production.');
     logger.warn('MONGODB_URI is not set; the API will run without a database connection in development.');
     return false;
   }
+  if (!databaseName) throw new Error('MONGODB_DATABASE is required when connecting to MongoDB.');
 
   registerConnectionEvents(logger);
   mongoose.set('strictQuery', true);
-  mongoose.set('autoIndex', !isProduction);
-  try {
-    await mongoose.connect(uri, { dbName: 'harf', serverSelectionTimeoutMS: 30_000 });
-  } catch (error) {
-    logger.error({ error: safeError(error) }, 'MongoDB connection failed.');
-    throw new Error('MongoDB connection failed. Verify MONGODB_URI, network access, and database user permissions.');
+  mongoose.set('autoIndex', false);
+
+  if (connectionPromise) {
+    if (connectionTarget.uri !== uri || connectionTarget.databaseName !== databaseName) {
+      return Promise.reject(new Error('MongoDB is already connecting to a different configured database.'));
+    }
+    return connectionPromise;
   }
-  logger.info('MongoDB connection established.');
-  return true;
+
+  connectionTarget = { uri, databaseName };
+  connectionPromise = Promise.resolve().then(() => mongoose.connect(uri, {
+    dbName: databaseName,
+    maxPoolSize: 10,
+    minPoolSize: 0,
+    maxIdleTimeMS: 30_000,
+    serverSelectionTimeoutMS: 30_000
+  })).then(() => {
+    logger.info('MongoDB connection established.');
+    return true;
+  }).catch(async (error) => {
+    logger.error({ error: safeError(error) }, 'MongoDB connection failed.');
+    try {
+      if (mongoose.connection.readyState !== 0) {
+        disconnecting = true;
+        try {
+          await mongoose.disconnect();
+        } catch (cleanupError) {
+          logger.error({ error: safeError(cleanupError) }, 'MongoDB connection cleanup failed.');
+        } finally {
+          disconnecting = false;
+        }
+      }
+    } finally {
+      connectionPromise = null;
+      connectionTarget = null;
+    }
+    throw new Error('MongoDB connection failed. Verify MONGODB_URI, MONGODB_DATABASE, network access, and database user permissions.');
+  });
+  return connectionPromise;
 }
 
 export function getDatabaseState() {
@@ -46,12 +79,14 @@ export function getDatabaseState() {
 }
 
 export async function disconnectMongo() {
-  if (mongoose.connection.readyState !== 0) {
-    disconnecting = true;
-    try {
+  disconnecting = true;
+  try {
+    if (mongoose.connection.readyState !== 0) {
       await mongoose.disconnect();
-    } finally {
-      disconnecting = false;
     }
+  } finally {
+    connectionPromise = null;
+    connectionTarget = null;
+    disconnecting = false;
   }
 }

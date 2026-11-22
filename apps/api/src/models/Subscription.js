@@ -20,7 +20,14 @@ subscriptionSchema.index(
   { parentUserId: 1, startsAt: -1, expiresAt: -1 },
   { name: 'subscriptions_by_parent_period' }
 );
-subscriptionSchema.index({ paymentRequestId: 1 }, { unique: true, sparse: true, name: 'subscription_by_payment_request' });
+subscriptionSchema.index(
+  { paymentRequestId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { paymentRequestId: { $type: 'objectId' } },
+    name: 'subscription_by_payment_request'
+  }
+);
 
 export const Subscription = mongoose.models.Subscription
   ?? mongoose.model('Subscription', subscriptionSchema);

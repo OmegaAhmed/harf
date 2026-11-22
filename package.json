@@ -15,6 +15,7 @@
     "dev": "concurrently --kill-others-on-fail --names api,web --prefix-colors blue,green \"npm run dev --workspace @harf/api\" \"npm run dev --workspace @harf/web\"",
     "build": "npm run build --workspace @harf/web",
     "start": "npm run start --workspace @harf/api",
+    "db:init:experimental": "npm run db:init:experimental --workspace @harf/api --",
     "test": "npm run test --workspace @harf/api"
   },
   "devDependencies": {

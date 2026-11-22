@@ -1,8 +1,7 @@
-import { MediaAsset } from '../models/MediaAsset.js';
 import { PlatformSettings } from '../models/PlatformSettings.js';
 
 export async function ensurePlatformSettingsIndexes() {
-  await Promise.all([PlatformSettings.createIndexes(), MediaAsset.createIndexes()]);
+  await PlatformSettings.createIndexes();
 }
 
 export function createPlatformSettingsRepository() {

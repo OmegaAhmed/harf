@@ -19,16 +19,12 @@ export const PUBLIC_SPECIALIST_PROJECTION = [
 ].join(' ');
 
 export async function ensureAuthIndexes() {
-  await Promise.all([
+  return Promise.all([
     User.createIndexes(),
     Session.createIndexes(),
     AuthToken.createIndexes(),
     AuditEvent.createIndexes()
   ]);
-  const indexes = await User.collection.indexes();
-  if (indexes.some(({ name }) => name === 'single_admin_bootstrap')) {
-    await User.collection.dropIndex('single_admin_bootstrap');
-  }
 }
 
 export function createAuthRepository() {

@@ -10,12 +10,16 @@ if (process.env.MONGODB_URI?.trim() === '') {
   delete process.env.MONGODB_URI;
 }
 dotenv.config({ path: path.join(projectRoot, '.env') });
+if (process.env.MONGODB_DATABASE?.trim() === '') {
+  delete process.env.MONGODB_DATABASE;
+}
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().trim().min(1).default('127.0.0.1'),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   MONGODB_URI: z.string().trim().optional(),
+  MONGODB_DATABASE: z.string().trim().min(1).optional(),
   MONGODB_DNS_SERVERS: z.string().default(''),
   APP_ORIGIN: z.string().url().default('http://localhost:5173'),
   CLIENT_ORIGINS: z.string().default('http://localhost:5173'),
@@ -103,6 +107,13 @@ if (!clientOrigins.includes(appOrigin)) {
 if (values.NODE_ENV === 'production' && !values.MONGODB_URI) {
   throw new Error('MONGODB_URI is required in production.');
 }
+const mongodbDatabase = values.MONGODB_DATABASE || 'harf_experimental';
+if (values.NODE_ENV === 'production' && !values.MONGODB_DATABASE) {
+  throw new Error('MONGODB_DATABASE is required in production.');
+}
+if (values.NODE_ENV === 'production' && mongodbDatabase === 'harf_experimental') {
+  throw new Error('Production must use a database other than harf_experimental.');
+}
 if (values.NODE_ENV === 'production') {
   if (new URL(appOrigin).protocol !== 'https:' || clientOrigins.some((origin) => new URL(origin).protocol !== 'https:')) {
     throw new Error('APP_ORIGIN and CLIENT_ORIGINS must use HTTPS in production.');
@@ -131,6 +142,7 @@ export const config = Object.freeze({
   host: values.HOST,
   port: values.PORT,
   mongodbUri: values.MONGODB_URI,
+  mongodbDatabase,
   appOrigin,
   clientOrigins,
   mediaStorageDir,

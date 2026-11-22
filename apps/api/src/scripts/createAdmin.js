@@ -1,8 +1,6 @@
 import { emitKeypressEvents } from 'node:readline';
 import { config } from '../config/env.js';
 import { connectMongo, disconnectMongo } from '../db/mongo.js';
-import { ensureAuthIndexes } from '../db/authRepository.js';
-import { ensureRoleIndexes, seedSystemRoles } from '../db/roleRepository.js';
 import { AuditEvent } from '../models/AuditEvent.js';
 import { Role } from '../models/Role.js';
 import { User } from '../models/User.js';
@@ -61,14 +59,17 @@ function askSecret(question) {
 async function main() {
   if (!config.mongodbUri) throw new Error('Set MONGODB_URI in the untracked .env before provisioning an administrator.');
   const logger = createLogger({ level: 'info', isProduction: config.isProduction });
-  await connectMongo(config.mongodbUri, { isProduction: config.isProduction, logger });
+  await connectMongo(config.mongodbUri, {
+    isProduction: config.isProduction,
+    logger,
+    databaseName: config.mongodbDatabase
+  });
   try {
-    await ensureAuthIndexes();
-    await ensureRoleIndexes();
-    await seedSystemRoles();
     if (await User.exists({ role: 'admin' })) {
       throw new Error('An administrator already exists. Additional administrator provisioning is intentionally disabled in this bootstrap command.');
     }
+    const superAdminRole = await Role.findOne({ key: 'super-admin' }).select('_id').lean();
+    if (!superAdminRole) throw new Error('System roles are missing. Run the approved database initialization process first.');
     const email = normalizeEmail(await ask('Administrator email: '));
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
       throw new Error('Enter a valid email address.');
@@ -82,7 +83,7 @@ async function main() {
       email,
       passwordHash: await hashPassword(password),
       role: 'admin',
-      adminRoleId: (await Role.findOne({ key: 'super-admin' }).select('_id').lean())._id,
+      adminRoleId: superAdminRole._id,
       emailVerifiedAt: new Date(),
       approvalStatus: 'approved',
       accountStatus: 'active'
