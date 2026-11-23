@@ -2,7 +2,7 @@
 
 ## Status
 
-No hosting provider, domain, TLS terminator, or production topology has been selected. The application is prepared to use configurable settings but is not a production deployment. Before launch, confirm the actual network path from client to proxy to API and review proxy trust, CORS, cookies, MongoDB connectivity, backups, monitoring, and TLS settings.
+No production hosting topology has been approved. A Vercel root-project deployment profile is provided for controlled testing, but this does not make the application production-ready. Before launch, confirm the actual network path from client to proxy to API and review proxy trust, CORS, cookies, MongoDB connectivity, backups, monitoring, and TLS settings.
 
 ## Local development
 
@@ -49,23 +49,37 @@ For secure browser testing, set `APP_ORIGIN` and `CLIENT_ORIGINS` to the exact H
 
 ## Experimental Vercel deployment
 
-Configure the Vercel Project Root Directory as the repository root (`.`) and the framework preset as Vite. The root `vercel.json` installs all npm workspaces with `npm ci --include=dev`, runs `npm run build`, and serves the Vite output from `apps/web/dist`. The root `api/[...path].js` exposes the existing Express serverless handler as one catch-all Node.js Function; it delegates to the shared API bootstrap without duplicating routes or middleware. API paths remain `/api/v1/*`. The SPA rewrite excludes `/api`, `/assets`, and paths with file extensions so API calls and missing static assets do not receive the SPA HTML fallback.
+This repository is an npm-workspaces monorepo. Vercel creates a separate project for each repository directory you choose to import; each project's Root Directory setting applies only to that project. To deploy this frontend and API together, configure one Vercel project with:
 
-Set deployment variables through Vercel's Environment Variables settings. Do not copy production credentials into Preview or Development environments.
+- **Root Directory:** repository root (`.`), not `apps/web` or `apps/api`.
+- **Framework Preset:** Vite.
+- **Node.js Version:** 22.x. The root `engines.node` range is bounded to Node.js 22.
+- **Install Command:** `npm ci --include=dev`.
+- **Build Command:** `npm run vercel:build`.
+- **Output Directory:** `apps/web/dist`.
 
-Required for the production-mode API configuration:
+These settings are defined in the root `vercel.json`. The build command validates the Production environment using the API's existing configuration schema before building the web workspace, so missing or invalid required settings fail the deployment build rather than leaving a deployed site whose API immediately returns 500. Enable Vercel system environment variables so `VERCEL` and `VERCEL_ENV` are available to the build.
 
-- `NODE_ENV`: `production`.
-- `MONGODB_URI`: the Vercel experimental cluster connection URI, kept private.
-- `MONGODB_DATABASE`: a database dedicated to Vercel experimentation and distinct from Hostinger production. The Phase 3A production guard rejects `harf_experimental` when `NODE_ENV=production`; use a separate experimental name such as `harf_vercel_experimental`.
-- `APP_ORIGIN`: the deployed HTTPS origin.
-- `CLIENT_ORIGINS`: comma-separated exact HTTPS browser origins; include `APP_ORIGIN`.
-- `SMTP_HOST` and `SMTP_FROM`. `SMTP_PORT` and `SMTP_SECURE` have defaults; `SMTP_USER` and `SMTP_PASSWORD` are optional but must be configured together.
-- `TRUST_PROXY`: review against Vercel's actual forwarded-proxy path. The API requires trusted HTTPS information in production; verify `request.secure` on a Vercel Preview deployment before accepting traffic.
+The root `api/harf.js` exposes the existing Express serverless handler as one Node.js Function. The Vercel route sends `/api/v1/*` requests to that function while preserving the original API path. The SPA rewrite excludes `/api`, `/assets`, and paths with file extensions. Keep the Vercel project root at the repository root so both `api/harf.js` and the workspace dependencies are included.
 
-`VITE_API_BASE_URL` should remain unset/empty for same-origin requests. Session cookies are configured in code as HttpOnly, Secure in production, and SameSite=Lax; there are no separate session or CSRF secrets to configure. CSRF uses the authenticated session token and the `X-CSRF-Token` request header.
+Add variables in the Environment Variables settings of the Vercel project that owns the production domain. The variable name and value are separate fields; use exact names and values without wrapping quotes or including `NAME=` in the value. Add the following to the **Production** environment:
 
-`MONGODB_DNS_SERVERS` is optional and only needed if the runtime's resolver cannot resolve the Atlas SRV/TXT records. `HOST` and `PORT` apply to the traditional Express server, not the Vercel Function. Filesystem-backed media and document uploads are not made persistent or Vercel-compatible by this phase; use of those endpoints remains unsupported until storage is redesigned.
+- `NODE_ENV`: exactly `production`.
+- `MONGODB_URI`: the private Atlas connection URI for the Vercel database. Use a rotated credential; never commit it or put it in a `VITE_` variable.
+- `MONGODB_DATABASE`: a database dedicated to Vercel and separate from Hostinger production and `harf_experimental`, for example `harf_vercel_experimental`.
+- `APP_ORIGIN`: the exact deployed HTTPS origin, for example `https://your-project.vercel.app`.
+- `CLIENT_ORIGINS`: comma-separated exact HTTPS browser origins; include the `APP_ORIGIN` value.
+- `SMTP_HOST` and `SMTP_FROM`: required in production. `SMTP_PORT` defaults to 587 and `SMTP_SECURE` to false; configure `SMTP_USER` and `SMTP_PASSWORD` together if the provider requires authentication.
+
+`VITE_API_BASE_URL` should remain unset or empty for same-origin requests. Session cookies are configured in code as HttpOnly, Secure in production, and SameSite=Lax; there are no separate session or CSRF secrets to configure. CSRF uses the authenticated session token and the `X-CSRF-Token` request header.
+
+`TRUST_PROXY` must reflect the actual Vercel-to-function proxy path because production API routes require Express to recognize HTTPS. Do not set broad proxy trust. Verify `request.secure` on a deployment and configure only a reviewed proxy address or hop count before enabling authenticated or state-changing API requests.
+
+Preview deployments that execute API functions need their own isolated Preview database, matching HTTPS `APP_ORIGIN`/`CLIENT_ORIGINS`, and SMTP settings. Do not copy production credentials into Preview or Development. `MONGODB_DNS_SERVERS` is optional and only needed if the runtime's resolver cannot resolve Atlas SRV/TXT records. `HOST` and `PORT` apply to the traditional Express server, not the Vercel Function.
+
+Filesystem-backed media and document uploads are not persistent on Vercel; those endpoints remain unsupported until storage is redesigned. A successful static build does not make those features durable.
+
+After deployment, verify `GET /api/v1/health/live` returns 200. `GET /api/v1/health/ready` returns 200 only after MongoDB connects; a 503 there indicates the database is not ready. A missing or invalid Production setting should now stop the build with the configuration error instead of reaching the API at runtime.
 
 ## Health endpoints
 
