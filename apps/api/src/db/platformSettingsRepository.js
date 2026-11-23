@@ -1,4 +1,5 @@
 import { PlatformSettings } from '../models/PlatformSettings.js';
+import { MediaAsset } from '../models/MediaAsset.js';
 
 export async function ensurePlatformSettingsIndexes() {
   await PlatformSettings.createIndexes();
