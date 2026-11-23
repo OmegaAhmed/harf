@@ -6,6 +6,7 @@ import { AppError } from '../middleware/errors.js';
 import { validate } from '../middleware/validate.js';
 import { paymentRequestParamsSchema, paymentRequestSchema } from '../validation/payments.js';
 import { sendPrivateReceipt } from './receipt.js';
+import { handleBlobUploadToken } from '../services/blobStorageService.js';
 
 const paymentUpload = multer({
   storage: multer.memoryStorage(),
@@ -20,6 +21,15 @@ const paymentUpload = multer({
 });
 
 const paymentRequestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  handler(_request, _response, next) {
+    next(new AppError(429, 'PAYMENT_REQUEST_RATE_LIMITED', 'طلبات الدفع كثيرة جدًا. يرجى الانتظار قبل المحاولة مجددًا.'));
+  }
+});
+const paymentUploadTokenLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
   standardHeaders: 'draft-8',
@@ -61,11 +71,20 @@ export function createPaymentsRouter({ authenticationMiddleware, subscriptionSer
     });
   });
 
+  router.post('/receipt/upload-token', requireCsrf, paymentUploadTokenLimiter, async (request, response) => {
+    await handleBlobUploadToken(request, response, {
+      kind: 'receipts',
+      pathPrefix: `receipts/${request.authenticated.user._id ?? request.authenticated.user.id}`,
+      allowedContentTypes: ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'],
+      maximumSizeInBytes: 5 * 1024 * 1024
+    });
+  });
+
   router.post('/', requireCsrf, paymentRequestLimiter, parsePaymentUpload, validate(paymentRequestSchema), async (request, response) => {
     const payment = await subscriptionService.createPaymentRequest(
       request.authenticated.user,
       request.body,
-      request.file
+      request.file ?? request.body.receiptStorageName
     );
     response.status(201).json({ payment });
   });

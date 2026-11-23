@@ -5,7 +5,8 @@ const paymentMethod = z.enum(['vodafone_cash', 'instapay']);
 export const paymentRequestSchema = z.object({
   method: paymentMethod,
   period: z.enum(['monthly', 'annual']).default('monthly'),
-  transactionReference: z.string().trim().min(3).max(100)
+  transactionReference: z.string().trim().min(3).max(100),
+  receiptStorageName: z.string().regex(/^receipts\/(?:[a-f\d]{24}\/)?[a-f\d-]{36}$/i).optional()
 }).strict();
 
 const methodSettingsSchema = z.object({
@@ -42,7 +43,8 @@ export const sessionPaymentSettingsSchema = z.object({
 }).strict();
 
 export const sessionPaymentSubmissionSchema = z.object({
-  method: paymentMethod
+  method: paymentMethod,
+  receiptStorageName: z.string().regex(/^receipts\/(?:[a-f\d]{24}\/)?[a-f\d-]{36}$/i).optional()
 }).strict();
 
 export const sessionPaymentDecisionSchema = z.object({

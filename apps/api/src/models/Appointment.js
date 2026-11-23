@@ -17,7 +17,7 @@ const sessionPaymentReviewSchema = new mongoose.Schema({
   decisionNote: { type: String, trim: true, maxlength: 300, default: '' },
   method: { type: String, enum: ['vodafone_cash', 'instapay'], required: true },
   receipt: {
-    storageName: { type: String, match: /^[a-f\d-]{36}$/i },
+    storageName: { type: String, match: /^(?:[a-f\d-]{36}|receipts\/(?:[a-f\d]{24}\/)?[a-f\d-]{36})$/i },
     mimeType: { type: String, enum: ['image/png', 'image/jpeg', 'image/webp'] },
     sizeBytes: { type: Number, min: 1, max: 5 * 1024 * 1024 }
   },
@@ -47,7 +47,7 @@ const sessionPaymentSchema = new mongoose.Schema({
   },
   method: { type: String, enum: ['vodafone_cash', 'instapay'] },
   receipt: {
-    storageName: { type: String, match: /^[a-f\d-]{36}$/i },
+    storageName: { type: String, match: /^(?:[a-f\d-]{36}|receipts\/(?:[a-f\d]{24}\/)?[a-f\d-]{36})$/i },
     mimeType: { type: String, enum: ['image/png', 'image/jpeg', 'image/webp'] },
     sizeBytes: { type: Number, min: 1, max: 5 * 1024 * 1024 }
   },

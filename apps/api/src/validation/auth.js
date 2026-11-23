@@ -7,12 +7,19 @@ const displayName = z.string().trim().min(2).max(100).refine(
   isReadableName,
   'Enter a name containing letters or numbers.'
 );
+const specialistDocumentPath = z.string().regex(/^specialist-documents\/(?:registration|[a-f\d]{24})\/[a-f\d-]{36}$/i);
+const specialistDocumentsSchema = z.object({
+  profilePhoto: specialistDocumentPath,
+  medicalCardFront: specialistDocumentPath,
+  medicalCardBack: specialistDocumentPath
+}).strict();
 
 export const registrationSchema = z.object({
   email,
   password,
   role: z.enum(['parent', 'specialist']),
-  displayName
+  displayName,
+  specialistDocuments: specialistDocumentsSchema.optional()
 }).strict();
 
 export const loginSchema = z.object({

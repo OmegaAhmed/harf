@@ -8,9 +8,11 @@
     "start": "node src/server.js",
     "test": "node --test",
     "db:init:experimental": "node src/scripts/initExperimentalDatabase.js",
+    "db:init:production": "node src/scripts/initProductionDatabase.js",
     "admin:create": "node src/scripts/createAdmin.js"
   },
   "dependencies": {
+    "@vercel/blob": "2.4.0",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",

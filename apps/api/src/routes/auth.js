@@ -11,6 +11,7 @@ import {
   requireTrustedOrigin
 } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
+import { handleBlobUploadToken } from '../services/blobStorageService.js';
 import {
   emailSchema,
   loginSchema,
@@ -102,10 +103,24 @@ export function createAuthRouter({ authService, config, authenticationMiddleware
   const emailLimiter = makeRateLimiter({ limit: 5, windowMs: 15 * 60 * 1000 });
   const resetLimiter = makeRateLimiter({ limit: 5, windowMs: 15 * 60 * 1000 });
   const specialistDocumentLimiter = makeRateLimiter({ limit: 5, windowMs: 15 * 60 * 1000 });
+  const registrationUploadLimiter = makeRateLimiter({ limit: 24, windowMs: 15 * 60 * 1000 });
+  const specialistDocumentUploadLimiter = makeRateLimiter({ limit: 15, windowMs: 15 * 60 * 1000 });
   const sessionName = getSessionCookieName(config.isProduction);
 
+  router.post('/register/upload-token', registrationUploadLimiter, async (request, response) => {
+    await handleBlobUploadToken(request, response, {
+      kind: 'specialistDocuments',
+      pathPrefix: 'specialist-documents/registration',
+      allowedContentTypes: ['image/png', 'image/jpeg', 'image/webp'],
+      maximumSizeInBytes: 5 * 1024 * 1024
+    });
+  });
+
   router.post('/register', registrationLimiter, registrationUpload, validate(registrationSchema), async (request, response) => {
-    const result = await authService.register({ ...request.body, files: request.files });
+    const result = await authService.register({
+      ...request.body,
+      files: request.files ?? request.body.specialistDocuments
+    });
     if (result.session) setSessionCookie(response, result.session, config);
     response.status(202).json({
       user: result.user,
@@ -193,8 +208,20 @@ export function createAuthRouter({ authService, config, authenticationMiddleware
     response.json({ user });
   });
 
+  router.post('/specialist/documents/upload-token', authenticationMiddleware, requireAuthentication, requireRole('specialist'), requireCsrf, specialistDocumentUploadLimiter, async (request, response) => {
+    await handleBlobUploadToken(request, response, {
+      kind: 'specialistDocuments',
+      pathPrefix: `specialist-documents/${request.authenticated.user._id ?? request.authenticated.user.id}`,
+      allowedContentTypes: ['image/png', 'image/jpeg', 'image/webp'],
+      maximumSizeInBytes: 5 * 1024 * 1024
+    });
+  });
+
   router.post('/specialist/documents', authenticationMiddleware, requireAuthentication, requireRole('specialist'), requireCsrf, specialistDocumentLimiter, verificationUpload, async (request, response) => {
-    const user = await authService.updateSpecialistDocuments(request.authenticated.user, request.files);
+    const user = await authService.updateSpecialistDocuments(
+      request.authenticated.user,
+      request.files ?? request.body.specialistDocuments
+    );
     response.json({ user });
   });
 

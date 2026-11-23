@@ -47,6 +47,7 @@ import {
   adminVideoTestResultsSchema
 } from '../validation/adminVideo.js';
 import { requireAdminRequestPermission } from '../auth/permissions.js';
+import { handleBlobUploadToken } from '../services/blobStorageService.js';
 import { gameInteractionSchema } from '../validation/games.js';
 import {
   administratorRoleSchema,
@@ -78,6 +79,15 @@ const mediaUpload = multer({
   }
 });
 const mediaUploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  handler(_request, _response, next) {
+    next(new AppError(429, 'MEDIA_UPLOAD_RATE_LIMITED', 'Too many media uploads. Please wait before trying again.'));
+  }
+});
+const mediaUploadTokenLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 30,
   standardHeaders: 'draft-8',
@@ -601,6 +611,18 @@ export function createAdminRouter({
       response.json({ assets: await gameLibraryService.listAssets() });
     });
 
+    router.post('/assets/upload-token', mediaUploadTokenLimiter, async (request, response) => {
+      await handleBlobUploadToken(request, response, {
+        kind: 'media',
+        allowedContentTypes: [
+          'image/png', 'image/jpeg', 'image/webp', 'image/gif',
+          'audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/ogg',
+          'video/mp4', 'application/json'
+        ],
+        maximumSizeInBytes: 20 * 1024 * 1024
+      });
+    });
+
     router.get('/assets/:assetId/preview', validate(assetIdSchema, 'params'), async (request, response, next) => {
       try {
         const result = await gameLibraryService.readAdminAsset(request.params.assetId);
@@ -616,7 +638,7 @@ export function createAdminRouter({
 
     router.post('/assets', mediaUploadLimiter, parseUpload, validate(uploadAssetMetadataSchema), async (request, response) => {
       const asset = await gameLibraryService.uploadAsset(request.authenticated.user, {
-        file: request.file,
+        file: request.file ?? (request.body.storageName ? { storageName: request.body.storageName } : null),
         ...request.body
       });
       response.status(201).json({ asset });
@@ -626,7 +648,7 @@ export function createAdminRouter({
       const asset = await gameLibraryService.replaceAsset(
         request.authenticated.user,
         request.params.assetId,
-        request.file
+        request.file ?? (request.body.storageName ? { storageName: request.body.storageName } : null)
       );
       response.json({ asset });
     });

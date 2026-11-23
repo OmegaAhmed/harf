@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiRequest, getApiUrl } from '../lib/api.js';
+import { uploadPrivateBlob } from '../lib/blobUpload.js';
 import AdminSpatialEditor, { createSpatialDraft } from './games/AdminSpatialEditor.jsx';
 
 const events = [
@@ -48,6 +49,13 @@ const formatBytes = (bytes) => {
   if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} كيلوبايت`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} ميجابايت`;
 };
+
+function assetUploadFormData(metadata, file) {
+  const formData = new FormData();
+  for (const [key, value] of Object.entries(metadata)) formData.set(key, value);
+  formData.set('file', file);
+  return formData;
+}
 
 function AdminAssetPreview({ asset }) {
   const [failed, setFailed] = useState(asset.available === false);
@@ -284,14 +292,22 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
     setError('');
     setNotice('');
     try {
-      const formData = new FormData();
-      formData.set('displayName', `صورة رفيق ${content.title || selectedGame?.gameId || 'اللعبة'}`);
-      formData.set('kind', 'image');
-      formData.set('altText', `صورة ${content.companion || 'رفيق اللعبة'}`);
-      formData.set('category', 'رفاق الألعاب');
-      formData.set('tags', 'رفيق، حيوان، لعبة');
-      formData.set('file', file);
-      const result = await apiRequest('/api/v1/admin/assets', { method: 'POST', body: formData });
+      const metadata = {
+        displayName: `صورة رفيق ${content.title || selectedGame?.gameId || 'اللعبة'}`,
+        kind: 'image',
+        altText: `صورة ${content.companion || 'رفيق اللعبة'}`,
+        category: 'رفاق الألعاب',
+        tags: 'رفيق، حيوان، لعبة'
+      };
+      const storageName = await uploadPrivateBlob(file, '/api/v1/admin/assets/upload-token', 'media');
+      const result = await apiRequest('/api/v1/admin/assets', storageName ? {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...metadata, storageName })
+      } : {
+        method: 'POST',
+        body: assetUploadFormData(metadata, file)
+      });
       setAssets((current) => [result.asset, ...current]);
       updateContentField('companionAnimalImageAssetId', result.asset.id);
       setNotice('تم رفع الصورة واختيارها لرفيق اللعبة. احفظ المسودة لنشر التغيير لاحقًا.');
@@ -645,14 +661,27 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
     setError('');
     setNotice('');
     try {
-      const formData = new FormData();
-      formData.set('displayName', uploadName);
-      formData.set('kind', uploadKind);
-      formData.set('altText', uploadAltText);
-      formData.set('category', uploadCategory);
-      formData.set('tags', uploadTags);
-      formData.set('file', uploadFile);
-      const result = await apiRequest('/api/v1/admin/assets', { method: 'POST', body: formData });
+      const storageName = await uploadPrivateBlob(
+        uploadFile,
+        '/api/v1/admin/assets/upload-token',
+        'media',
+        uploadKind === 'animation' ? 'application/json' : uploadFile.type
+      );
+      const metadata = {
+        displayName: uploadName,
+        kind: uploadKind,
+        altText: uploadAltText,
+        category: uploadCategory,
+        tags: uploadTags
+      };
+      const result = await apiRequest('/api/v1/admin/assets', storageName ? {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...metadata, storageName })
+      } : {
+        method: 'POST',
+        body: assetUploadFormData(metadata, uploadFile)
+      });
       setAssets((current) => [result.asset, ...current]);
       setUploadName('');
       setUploadAltText('');
@@ -703,11 +732,19 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
     setError('');
     setNotice('');
     try {
-      const formData = new FormData();
-      formData.set('file', file);
-      await apiRequest(`/api/v1/admin/assets/${asset.id}/replace`, {
+      const storageName = await uploadPrivateBlob(
+        file,
+        '/api/v1/admin/assets/upload-token',
+        'media',
+        asset.kind === 'animation' ? 'application/json' : file.type
+      );
+      await apiRequest(`/api/v1/admin/assets/${asset.id}/replace`, storageName ? {
         method: 'POST',
-        body: formData
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storageName })
+      } : {
+        method: 'POST',
+        body: assetUploadFormData({}, file)
       });
       await loadData();
       setNotice('تم استبدال الملف وإنشاء أصل جديد. تم تحديث المسودات إلى الأصل الجديد مع الاحتفاظ بمراجع النسخ المنشورة القديمة.');

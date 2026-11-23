@@ -319,21 +319,32 @@ export class SubscriptionService {
 
   async createPaymentRequest(parent, input, file) {
     const parentUserId = accountId(parent);
+    const discardUnattachedReceipt = () => this.receiptService.remove({
+      storageName: typeof file === 'string' ? file : file?.storageName
+    });
     const settings = await this.paymentRepository.getSettings();
-    if (!settings) throw new AppError(409, 'SUBSCRIPTION_NOT_CONFIGURED', 'لم يتم إعداد سعر الاشتراك وطرق الدفع بعد.');
+    if (!settings) {
+      await discardUnattachedReceipt();
+      throw new AppError(409, 'SUBSCRIPTION_NOT_CONFIGURED', 'لم يتم إعداد سعر الاشتراك وطرق الدفع بعد.');
+    }
     const amountMinor = input.period === 'annual'
       ? settings.annualAmountMinor
       : settings.amountMinor;
     if (!amountMinor) {
+      await discardUnattachedReceipt();
       throw new AppError(409, 'SUBSCRIPTION_PERIOD_NOT_CONFIGURED', 'لم يتم إعداد سعر الاشتراك السنوي بعد.');
     }
     const methodConfig = input.method === 'vodafone_cash' ? settings.vodafoneCash : settings.instaPay;
-    if (!methodConfig.enabled) throw new AppError(409, 'PAYMENT_METHOD_DISABLED', 'طريقة الدفع المختارة غير متاحة حاليًا.');
+    if (!methodConfig.enabled) {
+      await discardUnattachedReceipt();
+      throw new AppError(409, 'PAYMENT_METHOD_DISABLED', 'طريقة الدفع المختارة غير متاحة حاليًا.');
+    }
     if (await this.paymentRepository.findOpenPayment(parentUserId)) {
+      await discardUnattachedReceipt();
       throw new AppError(409, 'PAYMENT_REVIEW_PENDING', 'لديك طلب دفع مفتوح بالفعل. انتظر مراجعته قبل إنشاء طلب آخر.');
     }
 
-    const receipt = file ? await this.receiptService.store(file) : null;
+    const receipt = file ? await this.receiptService.store(file, { ownerId: parentUserId }) : null;
     let payment;
     try {
       payment = await this.paymentRepository.createPaymentRequest({

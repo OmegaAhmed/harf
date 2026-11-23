@@ -1,18 +1,7 @@
-import { ensureAdminVideoTestIndexes } from './adminVideoTestRepository.js';
-import { ensureAppointmentIndexes } from './appointmentRepository.js';
-import { ensureAuthIndexes } from './authRepository.js';
-import { ensureChildIndexes } from './childRepository.js';
-import { ensureGameIndexes } from './gameRepository.js';
+import { initializeDatabaseIndexes } from './databaseIndexes.js';
 import { seedGameLibrary } from './gameLibraryRepository.js';
-import { ensureLearningPathIndexes, seedLearningPath } from './learningPathRepository.js';
-import { ensureNotificationIndexes } from './notificationRepository.js';
-import { ensurePaymentIndexes } from './paymentRepository.js';
-import { ensurePlatformSettingsIndexes } from './platformSettingsRepository.js';
-import { ensureRoleIndexes, seedSystemRoles } from './roleRepository.js';
-import { ensureSessionPaymentIndexes } from './sessionPaymentRepository.js';
-import { ensureSubscriptionIndexes } from './subscriptionRepository.js';
-import { ensureTestimonialIndexes } from './testimonialRepository.js';
-import { ensureGamificationIndexes } from '../services/gamificationService.js';
+import { seedLearningPath } from './learningPathRepository.js';
+import { seedSystemRoles } from './roleRepository.js';
 
 export const EXPERIMENTAL_DATABASE_NAME = 'harf_experimental';
 
@@ -30,22 +19,7 @@ export function assertExperimentalInitializationTarget({ mode, nodeEnv, database
 
 export async function initializeExperimentalDatabase(options) {
   assertExperimentalInitializationTarget(options);
-  await Promise.all([
-    ensureAuthIndexes(),
-    ensureRoleIndexes(),
-    ensureChildIndexes(),
-    ensureGameIndexes(),
-    ensureSubscriptionIndexes(),
-    ensurePaymentIndexes(),
-    ensureLearningPathIndexes(),
-    ensureGamificationIndexes(),
-    ensureAppointmentIndexes(),
-    ensureNotificationIndexes(),
-    ensurePlatformSettingsIndexes(),
-    ensureTestimonialIndexes(),
-    ensureAdminVideoTestIndexes(),
-    ensureSessionPaymentIndexes()
-  ]);
+  await initializeDatabaseIndexes();
   await seedSystemRoles();
   await seedGameLibrary();
   await seedLearningPath();

@@ -17,6 +17,7 @@
     "vercel:build": "node scripts/validate-vercel-production-env.js && npm run build",
     "start": "npm run start --workspace @harf/api",
     "db:init:experimental": "npm run db:init:experimental --workspace @harf/api --",
+    "db:init:production": "npm run db:init:production --workspace @harf/api --",
     "test": "npm run test --workspace @harf/api"
   },
   "devDependencies": {

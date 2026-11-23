@@ -172,7 +172,7 @@ export class AuthService {
     const normalizedEmail = normalizeEmail(email);
     const passwordHash = await hashPassword(password);
     const storedDocuments = role === 'specialist'
-      ? await this.specialistDocumentService.storeRequired(files)
+      ? await this.specialistDocumentService.storeRequired(files, { registration: true })
       : null;
     const userData = {
       email: normalizedEmail,
@@ -409,7 +409,9 @@ export class AuthService {
   }
 
   async updateSpecialistDocuments(user, files) {
-    const documents = await this.specialistDocumentService.storeRequired(files);
+    const documents = await this.specialistDocumentService.storeRequired(files, {
+      ownerId: String(user._id ?? user.id)
+    });
     let result;
     try {
       result = await this.repository.updateSpecialistDocuments(user._id ?? user.id, documents);

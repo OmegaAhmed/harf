@@ -36,6 +36,7 @@ import { SessionPaymentService } from './services/sessionPaymentService.js';
 import { createRoleRepository } from './db/roleRepository.js';
 import { RoleService } from './services/roleService.js';
 import { GamificationService } from './services/gamificationService.js';
+import { BlobStorageService } from './services/blobStorageService.js';
 
 export async function createApplication({ config, logger, initializeStorage = true }) {
   const databaseConnected = await connectMongo(config.mongodbUri, {
@@ -45,12 +46,16 @@ export async function createApplication({ config, logger, initializeStorage = tr
   });
 
   const repository = createAuthRepository();
+  const blobStorage = config.isProduction || process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN
+    ? new BlobStorageService()
+    : null;
   const roleService = new RoleService({
     repository: createRoleRepository(),
     authRepository: repository
   });
   const specialistDocumentService = new SpecialistDocumentService({
-    storageDirectory: path.join(config.mediaStorageDir, 'specialist-verification')
+    storageDirectory: path.join(config.mediaStorageDir, 'specialist-verification'),
+    blobStorage
   });
   if (initializeStorage) await specialistDocumentService.initialize();
   const childRepository = createChildRepository();
@@ -96,7 +101,8 @@ export async function createApplication({ config, logger, initializeStorage = tr
   const gameLibraryRepository = createGameLibraryRepository();
   const mediaAssetService = new MediaAssetService({
     repository: gameLibraryRepository,
-    storageDirectory: config.mediaStorageDir
+    storageDirectory: config.mediaStorageDir,
+    blobStorage
   });
   if (initializeStorage) await mediaAssetService.initialize();
   const authService = new AuthService({
@@ -113,7 +119,8 @@ export async function createApplication({ config, logger, initializeStorage = tr
     mediaAssetService
   });
   const subscriptionReceiptService = new PaymentReceiptService({
-    storageDirectory: path.join(config.mediaStorageDir, 'payment-receipts')
+    storageDirectory: path.join(config.mediaStorageDir, 'payment-receipts'),
+    blobStorage
   });
   const subscriptionService = new SubscriptionService({
     repository: createSubscriptionRepository(),
@@ -126,7 +133,8 @@ export async function createApplication({ config, logger, initializeStorage = tr
   });
   if (initializeStorage) await subscriptionReceiptService.initialize();
   const sessionPaymentReceiptService = new PaymentReceiptService({
-    storageDirectory: path.join(config.mediaStorageDir, 'session-payment-receipts')
+    storageDirectory: path.join(config.mediaStorageDir, 'session-payment-receipts'),
+    blobStorage
   });
   const sessionPaymentService = new SessionPaymentService({
     repository: sessionPaymentRepository,

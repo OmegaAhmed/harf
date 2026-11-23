@@ -82,18 +82,31 @@ export class SessionPaymentService {
   }
 
   async submitReceipt(parent, appointmentId, { method }, file) {
-    if (!file?.buffer?.length) throw new AppError(400, 'RECEIPT_REQUIRED', 'ارفع صورة إيصال التحويل قبل الإرسال.');
+    if (!file?.buffer?.length && typeof file !== 'string' && !file?.storageName) {
+      throw new AppError(400, 'RECEIPT_REQUIRED', 'ارفع صورة إيصال التحويل قبل الإرسال.');
+    }
+    const discardUnattachedReceipt = () => this.receiptService.remove({
+      storageName: typeof file === 'string' ? file : file?.storageName
+    });
     const appointment = await this.repository.findOwnedAppointment(appointmentId, idOf(parent));
-    if (!appointment?.payment) throw new AppError(404, 'SESSION_PAYMENT_NOT_FOUND', 'تفاصيل الدفع غير متاحة لهذا الموعد.');
+    if (!appointment?.payment) {
+      await discardUnattachedReceipt();
+      throw new AppError(404, 'SESSION_PAYMENT_NOT_FOUND', 'تفاصيل الدفع غير متاحة لهذا الموعد.');
+    }
     const methodConfig = appointment.payment.methods?.[method];
     if (!methodConfig) {
+      await discardUnattachedReceipt();
       throw new AppError(409, 'SESSION_PAYMENT_METHOD_DISABLED', 'طريقة الدفع المختارة غير متاحة لهذا الموعد.');
     }
     const now = this.now();
     if (appointment.payment.deadline <= now || appointment.payment.status === 'expired') {
+      await discardUnattachedReceipt();
       throw new AppError(409, 'SESSION_PAYMENT_EXPIRED', 'انتهت مهلة دفع هذه الجلسة.');
     }
-    const receipt = await this.receiptService.store(file, { imagesOnly: true });
+    const receipt = await this.receiptService.store(file, {
+      imagesOnly: true,
+      ownerId: idOf(parent)
+    });
     let updated;
     try {
       updated = await this.repository.submitReceipt(appointmentId, idOf(parent), now, method, receipt);

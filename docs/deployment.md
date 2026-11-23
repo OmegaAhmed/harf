@@ -39,7 +39,7 @@ For secure browser testing, set `APP_ORIGIN` and `CLIENT_ORIGINS` to the exact H
 - The same SMTP transport sends optional generic notification email. In-app notifications remain persisted if delivery fails; review API logs and provider telemetry for delivery failures. Notification messages must not include child details, payment receipts, private specialist notes, or consultation reports.
 - The current auth rate limiters use an in-memory store. This is suitable only for a single API process; configure a shared store before running multiple instances, or limits will not be consistent across instances/restarts.
 - The API does not create indexes or seed records during normal startup. Run the explicit experimental initializer only for the experimental database. Production index changes require a separately reviewed operational process.
-- Set `MEDIA_STORAGE_DIR` to a durable private directory outside the web server's static/public paths. The default is a sibling `harf-media` directory outside the workspace. Back up files together with MongoDB metadata, restrict filesystem access, and test restore and capacity monitoring before publishing assets.
+- Local development can use `MEDIA_STORAGE_DIR` for filesystem-backed uploads. When `BLOB_READ_WRITE_TOKEN` is not configured in development, the upload forms retain their multipart upload path to this local storage. Production uploads use a private Vercel Blob store; Vercel Function filesystems are temporary and are not used as durable storage.
 - Keep MongoDB on a private network and use deployment secret storage for its URI. Production requires both `MONGODB_URI` and an explicit `MONGODB_DATABASE` other than `harf_experimental`; automatic Mongoose index creation is disabled in production.
 - Live meetings use Jitsi's IFrame API. `JITSI_DOMAIN` defaults to `meet.jit.si`; `JITSI_PARENT_EARLY_JOIN_MINUTES` (10), `JITSI_SPECIALIST_EARLY_JOIN_MINUTES` (15), and `JITSI_POST_APPOINTMENT_GRACE_MINUTES` (30) are enforced by the API. A room name is opaque and unpredictable, but the public Jitsi service does not guarantee participant-only access or authenticate a caller against the Haraf booking. Do not treat the default public service as sufficient for confidential production consultations. Review child-data processing, geography, retention, cost, and terms; for actual access control, configure an authenticated/self-hosted Jitsi deployment and implement/verify its server-side JWT/moderator setup before launch. No signing key is exposed to the browser and JWT issuance is not implemented here.
 - Admin video tests use `VIDEO_TEST_LIFETIME_MINUTES` (default 30, allowed 5–60). Expiry prevents further Haraf API access and consumes temporary second-participant tokens; it cannot close a room on public Jitsi. The one-use link is only an additional application-level gate, not provider room authentication. Test records do not contain media or recordings.
@@ -71,13 +71,24 @@ Add variables in the Environment Variables settings of the Vercel project that o
 - `CLIENT_ORIGINS`: comma-separated exact HTTPS browser origins; include the `APP_ORIGIN` value.
 - `SMTP_HOST` and `SMTP_FROM`: required in production. `SMTP_PORT` defaults to 587 and `SMTP_SECURE` to false; configure `SMTP_USER` and `SMTP_PASSWORD` together if the provider requires authentication.
 
+Create a **Private** Blob store from the Vercel project's **Storage** tab and connect it to Production (and Preview if used). Select **Add a read-write token env var to this connection** so Vercel provides `BLOB_READ_WRITE_TOKEN`; the API uses it to authorize direct browser uploads. Redeploy after connecting the store. Never add the token as a `VITE_` variable or expose it to the browser. The official Hobby pricing includes 1 GB of Blob storage and 10 GB of Blob data transfer monthly; monitor the Vercel usage dashboard.
+
 `VITE_API_BASE_URL` should remain unset or empty for same-origin requests. Session cookies are configured in code as HttpOnly, Secure in production, and SameSite=Lax; there are no separate session or CSRF secrets to configure. CSRF uses the authenticated session token and the `X-CSRF-Token` request header.
 
 `TRUST_PROXY` must reflect the actual Vercel-to-function proxy path because production API routes require Express to recognize HTTPS. Do not set broad proxy trust. Verify `request.secure` on a deployment and configure only a reviewed proxy address or hop count before enabling authenticated or state-changing API requests.
 
 Preview deployments that execute API functions need their own isolated Preview database, matching HTTPS `APP_ORIGIN`/`CLIENT_ORIGINS`, and SMTP settings. Do not copy production credentials into Preview or Development. `MONGODB_DNS_SERVERS` is optional and only needed if the runtime's resolver cannot resolve Atlas SRV/TXT records. `HOST` and `PORT` apply to the traditional Express server, not the Vercel Function.
 
-Filesystem-backed media and document uploads are not persistent on Vercel; those endpoints remain unsupported until storage is redesigned. A successful static build does not make those features durable.
+For a brand-new, empty production database, set the same `MONGODB_URI` and `MONGODB_DATABASE` in the trusted operator's untracked root `.env`, ensure Atlas allows that machine's IP, and run from the repository root:
+
+```powershell
+npm run db:init:production -- --confirm-database=harf-database
+npm run admin:create --workspace @harf/api
+```
+
+Replace `harf-database` with the exact `MONGODB_DATABASE` value. The production initializer requires explicit confirmation, refuses `harf_experimental`, and stops if any application collection contains documents. It creates application indexes and system roles only; it does not seed demo games or learning paths. Run it only against the intended empty Vercel database, then create the first administrator interactively. Do not use the experimental initializer for production.
+
+Media, specialist verification documents, and payment receipts are uploaded directly from the browser to the private Blob store, avoiding the Vercel Function request-body limit. The API verifies file contents and retains the existing authorization checks before saving each Blob pathname in MongoDB. Reads remain behind the API; do not make this store public. For local testing, connect the store to the project's Development environment and pull its variables with `vercel env pull`. Existing files in a developer's local `MEDIA_STORAGE_DIR` are not migrated automatically.
 
 After deployment, verify `GET /api/v1/health/live` returns 200. `GET /api/v1/health/ready` returns 200 only after MongoDB connects; a 503 there indicates the database is not ready. A missing or invalid Production setting should now stop the build with the configuration error instead of reaching the API at runtime.
 

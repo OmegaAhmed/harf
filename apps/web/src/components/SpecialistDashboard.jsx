@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiRequest } from '../lib/api.js';
+import { uploadPrivateBlob } from '../lib/blobUpload.js';
 import { displayNameOrFallback } from '../lib/displayName.js';
 import NotificationCenter from './NotificationCenter.jsx';
 import NotificationBell from './NotificationBell.jsx';
@@ -542,9 +543,26 @@ export default function SpecialistDashboard({ user, onSignOut, onReauthenticate,
             setError('');
             setNotice('');
             try {
+              const documentForm = new FormData(uploadForm);
+              const specialistDocuments = {};
+              for (const field of ['profilePhoto', 'medicalCardFront', 'medicalCardBack']) {
+                const storageName = await uploadPrivateBlob(
+                  documentForm.get(field),
+                  '/api/v1/auth/specialist/documents/upload-token',
+                  `specialist-documents/${user.id}`
+                );
+                if (!storageName) break;
+                specialistDocuments[field] = storageName;
+              }
+              const usesDirectUploads = Object.keys(specialistDocuments).length === 3;
               const { user: updatedUser } = await apiRequest('/api/v1/auth/specialist/documents', {
                 method: 'POST',
-                body: new FormData(uploadForm)
+                ...(usesDirectUploads
+                  ? {
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ specialistDocuments })
+                    }
+                  : { body: documentForm })
               });
               onProfileUpdated(updatedUser);
               setProfile(updatedUser.professionalProfile);

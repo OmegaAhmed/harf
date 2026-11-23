@@ -9,7 +9,7 @@ const administratorProfileSchema = new mongoose.Schema({
 }, { _id: false, strict: 'throw' });
 
 const storedImageSchema = new mongoose.Schema({
-  storageName: { type: String, required: true, match: /^[a-f\d-]{36}$/i },
+  storageName: { type: String, required: true, match: /^(?:[a-f\d-]{36}|specialist-documents\/(?:registration|[a-f\d]{24})\/[a-f\d-]{36})$/i },
   mimeType: { type: String, enum: ['image/png', 'image/jpeg', 'image/webp'], required: true },
   sizeBytes: { type: Number, required: true, min: 1, max: 5 * 1024 * 1024 }
 }, { _id: false, strict: 'throw' });

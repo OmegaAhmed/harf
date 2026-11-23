@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest, getApiUrl } from '../lib/api.js';
+import { uploadPrivateBlob } from '../lib/blobUpload.js';
 import { displayNameOrFallback } from '../lib/displayName.js';
 import NotificationCenter from './NotificationCenter.jsx';
 import NotificationBell from './NotificationBell.jsx';
@@ -507,9 +508,24 @@ export default function ParentDashboard({
     clearError();
     setNotice('');
     try {
+      const receipt = formData.get('receipt');
+      const hasReceipt = receipt instanceof File && receipt.size;
+      const receiptStorageName = hasReceipt
+        ? await uploadPrivateBlob(receipt, '/api/v1/payments/receipt/upload-token', `receipts/${user.id}`)
+        : undefined;
       await apiRequest('/api/v1/payments', {
         method: 'POST',
-        body: formData
+        ...(hasReceipt && !receiptStorageName
+          ? { body: formData }
+          : {
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                method: formData.get('method'),
+                period: formData.get('period'),
+                transactionReference: formData.get('transactionReference'),
+                ...(receiptStorageName ? { receiptStorageName } : {})
+              })
+            })
       });
       const billing = await apiRequest('/api/v1/auth/subscription');
       setSubscription(billing.subscription);
@@ -690,16 +706,31 @@ export default function ParentDashboard({
       setError('اختر طريقة الدفع أولًا.');
       return;
     }
-    const formData = new FormData();
-    formData.set('method', selectedPaymentMethod);
-    formData.set('receipt', paymentReceiptFile);
     setSubmittingSessionPayment(true);
     clearError();
     setNotice('');
     try {
+      const receiptStorageName = paymentReceiptFile
+        ? await uploadPrivateBlob(
+          paymentReceiptFile,
+          `/api/v1/appointments/${appointment.id}/payment/upload-token`,
+          `receipts/${user.id}`
+        )
+        : undefined;
+      const formData = new FormData();
+      formData.set('method', selectedPaymentMethod);
+      if (paymentReceiptFile) formData.set('receipt', paymentReceiptFile);
       const { payment } = await apiRequest(`/api/v1/appointments/${appointment.id}/payment`, {
         method: 'POST',
-        body: formData
+        ...(paymentReceiptFile && !receiptStorageName
+          ? { body: formData }
+          : {
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                method: selectedPaymentMethod,
+                ...(receiptStorageName ? { receiptStorageName } : {})
+              })
+            })
       });
       setAppointments((current) => current.map((item) => item.id === appointment.id
         ? { ...item, status: 'payment_under_review', payment }

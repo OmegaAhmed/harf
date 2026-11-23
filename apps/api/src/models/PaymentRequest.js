@@ -12,7 +12,7 @@ const paymentRequestSchema = new mongoose.Schema({
     instructions: { type: String, trim: true, maxlength: 500 }
   },
   receipt: {
-    storageName: { type: String, trim: true, maxlength: 80 },
+    storageName: { type: String, trim: true, maxlength: 80, match: /^(?:[a-f\d-]{36}|receipts\/(?:[a-f\d]{24}\/)?[a-f\d-]{36})$/i },
     mimeType: { type: String, enum: ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'] },
     sizeBytes: { type: Number, min: 1, max: 5 * 1024 * 1024 }
   },

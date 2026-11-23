@@ -3,6 +3,7 @@ import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileTypeFromBuffer } from 'file-type';
 import { AppError } from '../middleware/errors.js';
+import { isBlobStorageName } from './blobStorageService.js';
 
 const MAX_SIZES = Object.freeze({
   image: 5 * 1024 * 1024,
@@ -161,9 +162,10 @@ export function serializeAsset(asset, { includeUrl = true } = {}) {
 }
 
 export class MediaAssetService {
-  constructor({ repository, storageDirectory, now = () => new Date() }) {
+  constructor({ repository, storageDirectory, blobStorage = null, now = () => new Date() }) {
     this.repository = repository;
     this.storageDirectory = path.resolve(storageDirectory);
+    this.blobStorage = blobStorage;
     this.now = now;
     this.publicAssetIdsCache = null;
     this.publicAssetIdsCacheExpiresAt = 0;
@@ -184,11 +186,28 @@ export class MediaAssetService {
   }
 
   async upload({ file, displayName, kind, createdBy, altText = '', category = '', tags = [] }) {
-    if (!file?.buffer) throw new AppError(400, 'FILE_REQUIRED', 'Choose a media file to upload.');
-    const verified = await verifyFile(file.buffer, kind);
-    const storageName = randomUUID();
+    const sourcePath = file?.storageName;
+    if (!file?.buffer && !isBlobStorageName(sourcePath, 'media')) {
+      throw new AppError(400, 'FILE_REQUIRED', 'Choose a media file to upload.');
+    }
+    let buffer;
+    let verified;
+    try {
+      buffer = file.buffer ?? (await this.blobStorage?.read(sourcePath, MAX_SIZES[kind]))?.buffer;
+      if (!buffer) throw new AppError(404, 'MEDIA_FILE_NOT_FOUND', 'The uploaded media file was not found.');
+      verified = await verifyFile(buffer, kind);
+    } catch (error) {
+      if (sourcePath) await this.blobStorage?.remove(sourcePath);
+      throw error;
+    }
+    const storageName = sourcePath ?? (this.blobStorage
+      ? `media/${randomUUID()}`
+      : randomUUID());
     const storagePath = path.join(this.storageDirectory, storageName);
-    await writeFile(storagePath, file.buffer, { flag: 'wx', mode: 0o600 });
+    if (!sourcePath) {
+      if (this.blobStorage) await this.blobStorage.put(storageName, buffer, verified.mimeType);
+      else await writeFile(storagePath, buffer, { flag: 'wx', mode: 0o600 });
+    }
     try {
       const asset = await this.repository.createAsset({
         displayName,
@@ -200,14 +219,15 @@ export class MediaAssetService {
         width: verified.width ?? null,
         height: verified.height ?? null,
         storageName,
-        sizeBytes: file.buffer.length,
+        sizeBytes: buffer.length,
         active: true,
         createdBy,
         createdAt: this.now()
       });
       return serializeAsset(asset);
     } catch (error) {
-      await rm(storagePath, { force: true });
+      if (isBlobStorageName(storageName, 'media')) await this.blobStorage?.remove(storageName);
+      else await rm(storagePath, { force: true });
       throw error;
     }
   }
@@ -219,13 +239,33 @@ export class MediaAssetService {
   }
 
   async replace({ assetId, file, createdBy }) {
-    if (!file?.buffer) throw new AppError(400, 'FILE_REQUIRED', 'Choose a replacement file.');
+    if (!file?.buffer && !isBlobStorageName(file?.storageName, 'media')) {
+      throw new AppError(400, 'FILE_REQUIRED', 'Choose a replacement file.');
+    }
     const asset = await this.repository.findAsset(assetId);
     if (!asset) throw new AppError(404, 'ASSET_NOT_FOUND', 'The media asset was not found.');
-    const verified = await verifyFile(file.buffer, asset.kind);
-    const storageName = randomUUID();
+    const sourcePath = file?.storageName;
+    if (!file.buffer && !isBlobStorageName(sourcePath, 'media')) {
+      throw new AppError(400, 'FILE_REQUIRED', 'Choose a replacement file.');
+    }
+    let buffer;
+    let verified;
+    try {
+      buffer = file.buffer ?? (await this.blobStorage?.read(sourcePath, MAX_SIZES[asset.kind]))?.buffer;
+      if (!buffer) throw new AppError(404, 'MEDIA_FILE_NOT_FOUND', 'The uploaded media file was not found.');
+      verified = await verifyFile(buffer, asset.kind);
+    } catch (error) {
+      if (sourcePath) await this.blobStorage?.remove(sourcePath);
+      throw error;
+    }
+    const storageName = sourcePath ?? (this.blobStorage
+      ? `media/${randomUUID()}`
+      : randomUUID());
     const storagePath = path.join(this.storageDirectory, storageName);
-    await writeFile(storagePath, file.buffer, { flag: 'wx', mode: 0o600 });
+    if (!sourcePath) {
+      if (this.blobStorage) await this.blobStorage.put(storageName, buffer, verified.mimeType);
+      else await writeFile(storagePath, buffer, { flag: 'wx', mode: 0o600 });
+    }
     let replacement;
     try {
       replacement = await this.repository.createAsset({
@@ -238,7 +278,7 @@ export class MediaAssetService {
         width: verified.width ?? null,
         height: verified.height ?? null,
         storageName,
-        sizeBytes: file.buffer.length,
+        sizeBytes: buffer.length,
         active: true,
         createdBy,
         createdAt: this.now()
@@ -246,12 +286,13 @@ export class MediaAssetService {
       await this.repository.replaceDraftAssetReferences(String(assetId), String(replacement._id ?? replacement.id));
     } catch (error) {
       if (replacement) await this.repository.deleteAsset(String(replacement._id ?? replacement.id));
-      await rm(storagePath, { force: true });
+      if (isBlobStorageName(storageName, 'media')) await this.blobStorage?.remove(storageName);
+      else await rm(storagePath, { force: true });
       throw error;
     }
     if (!(await this.repository.isAssetReferenced(String(assetId)))) {
       await this.repository.deleteAsset(String(assetId));
-      await rm(path.join(this.storageDirectory, asset.storageName), { force: true });
+      await this.removeStored(asset.storageName);
     }
     return serializeAsset(replacement);
   }
@@ -269,7 +310,7 @@ export class MediaAssetService {
       throw new AppError(409, 'ASSET_IN_USE', 'This asset is assigned to a draft or published game. Remove the assignments and publish the change before deleting it.');
     }
     await this.repository.deleteAsset(assetId);
-    await rm(path.join(this.storageDirectory, asset.storageName), { force: true });
+    await this.removeStored(asset.storageName);
   }
 
   async readPublicAsset(assetId) {
@@ -320,6 +361,15 @@ export class MediaAssetService {
   }
 
   async readAssetFile(asset) {
+    if (isBlobStorageName(asset.storageName, 'media')) {
+      const stored = await this.blobStorage?.read(asset.storageName, MAX_SIZES[asset.kind]);
+      if (!stored) return null;
+      const verified = await verifyFile(stored.buffer, asset.kind);
+      if (verified.mimeType !== asset.mimeType) {
+        throw new AppError(500, 'MEDIA_FILE_INVALID', 'The stored media file does not match its verified metadata.');
+      }
+      return { buffer: stored.buffer, asset: serializeAsset(asset, { includeUrl: false }) };
+    }
     const filePath = path.join(this.storageDirectory, asset.storageName);
     let buffer;
     try {
@@ -336,6 +386,9 @@ export class MediaAssetService {
   }
 
   async isAvailable(asset) {
+    if (isBlobStorageName(asset.storageName, 'media')) {
+      return this.blobStorage ? this.blobStorage.exists(asset.storageName) : false;
+    }
     try {
       await access(path.join(this.storageDirectory, asset.storageName));
       return true;
@@ -343,5 +396,13 @@ export class MediaAssetService {
       if (error.code === 'ENOENT') return false;
       throw error;
     }
+  }
+
+  async removeStored(storageName) {
+    if (isBlobStorageName(storageName)) {
+      await this.blobStorage?.remove(storageName);
+      return;
+    }
+    await rm(path.join(this.storageDirectory, storageName), { force: true });
   }
 }

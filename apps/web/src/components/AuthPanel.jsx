@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { apiRequest, setCsrfToken } from '../lib/api.js';
+import { uploadPrivateBlob } from '../lib/blobUpload.js';
 import BrandLogo from './BrandLogo.jsx';
 
 const ParentDashboard = lazy(() => import('./ParentDashboard.jsx'));
@@ -12,6 +13,16 @@ const roleLabels = {
   specialist: 'أخصائي',
   admin: 'مسؤول'
 };
+
+async function uploadSpecialistDocuments(form, endpoint, pathPrefix) {
+  const documents = {};
+  for (const field of ['profilePhoto', 'medicalCardFront', 'medicalCardBack']) {
+    const storageName = await uploadPrivateBlob(form.get(field), endpoint, pathPrefix);
+    if (!storageName) return null;
+    documents[field] = storageName;
+  }
+  return documents;
+}
 
 const approvalLabels = {
   pending: 'بانتظار مراجعة الإدارة',
@@ -109,9 +120,20 @@ export default function AuthPanel({ standaloneDashboard = false, standaloneAdmin
     setNotice('');
     setDocumentUploadBusy(true);
     try {
+      const formData = new FormData(form);
+      const specialistDocuments = await uploadSpecialistDocuments(
+        formData,
+        '/api/v1/auth/specialist/documents/upload-token',
+        `specialist-documents/${user.id}`
+      );
       const { user: updatedUser } = await apiRequest('/api/v1/auth/specialist/documents', {
         method: 'POST',
-        body: new FormData(form)
+        ...(specialistDocuments
+          ? {
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ specialistDocuments })
+            }
+          : { body: formData })
       });
       setUser(updatedUser);
       setNotice('تم رفع الوثائق بنجاح. أصبحت متاحة للمسؤول لمراجعتها واعتماد الحساب.');
@@ -134,18 +156,23 @@ export default function AuthPanel({ standaloneDashboard = false, standaloneAdmin
     try {
       if (view === 'register') {
         const specialistRegistration = fields.role === 'specialist';
-        const result = await apiRequest('/api/v1/auth/register', specialistRegistration ? {
+        const specialistDocuments = specialistRegistration
+          ? await uploadSpecialistDocuments(form, '/api/v1/auth/register/upload-token', 'specialist-documents/registration')
+          : undefined;
+        const result = await apiRequest('/api/v1/auth/register', {
           method: 'POST',
-          body: form
-        } : {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: fields.email,
-            password: fields.password,
-            role: fields.role,
-            displayName: fields.displayName
-          })
+          ...(specialistRegistration && !specialistDocuments
+            ? { body: form }
+            : {
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  email: fields.email,
+                  password: fields.password,
+                  role: fields.role,
+                  displayName: fields.displayName,
+                  ...(specialistDocuments ? { specialistDocuments } : {})
+                })
+              })
         });
         if (result.user) {
           handleSession(result);

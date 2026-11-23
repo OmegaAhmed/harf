@@ -192,7 +192,8 @@ export const uploadAssetMetadataSchema = z.object({
   category: z.string().trim().max(40).optional().default(''),
   tags: z.string().trim().max(500).optional().default('')
     .transform((value) => [...new Set(value.split(',').map((tag) => tag.trim()).filter(Boolean))])
-    .pipe(z.array(z.string().min(1).max(30)).max(10))
+    .pipe(z.array(z.string().min(1).max(30)).max(10)),
+  storageName: z.string().regex(/^media\/[a-f\d-]{36}$/i).optional()
 }).strict();
 
 export const updateAssetSchema = z.object({

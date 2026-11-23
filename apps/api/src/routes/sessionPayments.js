@@ -6,6 +6,7 @@ import { AppError } from '../middleware/errors.js';
 import { validate } from '../middleware/validate.js';
 import { sessionPaymentParamsSchema, sessionPaymentSubmissionSchema } from '../validation/payments.js';
 import { sendPrivateReceipt } from './receipt.js';
+import { handleBlobUploadToken } from '../services/blobStorageService.js';
 
 const receiptUpload = multer({
   storage: multer.memoryStorage(),
@@ -13,6 +14,15 @@ const receiptUpload = multer({
 });
 
 const submissionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 6,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  handler(_request, _response, next) {
+    next(new AppError(429, 'SESSION_PAYMENT_RATE_LIMITED', 'طلبات الدفع كثيرة جدًا. يرجى الانتظار قبل المحاولة مجددًا.'));
+  }
+});
+const uploadTokenLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 6,
   standardHeaders: 'draft-8',
@@ -49,6 +59,17 @@ export function createSessionPaymentsRouter({ authenticationMiddleware, sessionP
     });
   });
 
+  router.post('/:appointmentId/payment/upload-token', requireCsrf, uploadTokenLimiter,
+    validate(sessionPaymentParamsSchema, 'params'), async (request, response) => {
+      await sessionPaymentService.getParentPayment(request.authenticated.user, request.params.appointmentId);
+      await handleBlobUploadToken(request, response, {
+        kind: 'receipts',
+        pathPrefix: `receipts/${request.authenticated.user._id ?? request.authenticated.user.id}`,
+        allowedContentTypes: ['image/png', 'image/jpeg', 'image/webp'],
+        maximumSizeInBytes: 5 * 1024 * 1024
+      });
+    });
+
   router.post('/:appointmentId/payment', requireCsrf, submissionLimiter, parseReceipt,
     validate(sessionPaymentParamsSchema, 'params'), validate(sessionPaymentSubmissionSchema),
     async (request, response) => {
@@ -56,7 +77,7 @@ export function createSessionPaymentsRouter({ authenticationMiddleware, sessionP
         request.authenticated.user,
         request.params.appointmentId,
         request.body,
-        request.file
+        request.file ?? request.body.receiptStorageName
       );
       response.status(201).json({ payment });
     });
