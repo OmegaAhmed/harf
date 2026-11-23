@@ -36,9 +36,18 @@ export async function apiRequest(path, options = {}) {
 
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
-    const error = new Error(payload?.error?.message ?? `API request failed with status ${response.status}.`);
+    const message = payload?.error?.message ?? `API request failed with status ${response.status}.`;
+    const validationMessages = Array.isArray(payload?.error?.details)
+      ? payload.error.details
+        .map((detail) => [detail.path, detail.message].filter(Boolean).join(': '))
+        .filter(Boolean)
+      : [];
+    const error = new Error(validationMessages.length
+      ? `${message} (${validationMessages.join('; ')})`
+      : message);
     error.status = response.status;
     error.code = payload?.error?.code;
+    error.details = payload?.error?.details;
     throw error;
   }
 

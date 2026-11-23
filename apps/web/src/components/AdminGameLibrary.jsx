@@ -523,45 +523,81 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
     setError('');
     setNotice('');
     try {
-      const initialPairs = content.pairs?.length ? [...content.pairs] : content.questions.slice(0, 8).map((question, index) => ({
-        id: `pair-${index + 1}`,
-        label: question.options[question.correctAnswerIndex] ?? `صورة ${index + 1}`,
-        imageAssetId: question.promptImageAssetId ?? null
-      }));
+      const initialPairs = newGameTemplate === content.template && content.pairs?.length
+        ? [...content.pairs]
+        : content.questions.slice(0, 8).map((question, index) => ({
+          id: `pair-${index + 1}`,
+          label: question.options[question.correctAnswerIndex] ?? `صورة ${index + 1}`,
+          imageAssetId: question.promptImageAssetId ?? null
+        }));
       while (newGameTemplate === 'picture-matching' && initialPairs.length < 2) {
         initialPairs.push({ id: `pair-${initialPairs.length + 1}`, label: `صورة ${initialPairs.length + 1}`, imageAssetId: null });
       }
-      const initialAssociativePairs = content.pairs?.length ? [...content.pairs] : content.questions.slice(0, 8).map((question, index) => ({
-        pairId: `pair-${index + 1}`,
-        leftItem: {
-          id: `left-${index + 1}`,
-          label: question.prompt.replace(/^.*?\s+/u, '') || `مفردة ${index + 1}`,
-          imageAssetId: question.promptImageAssetId ?? null
-        },
-        rightItem: {
-          id: `right-${index + 1}`,
-          label: question.options[question.correctAnswerIndex] ?? `اختيار ${index + 1}`,
-          imageAssetId: question.optionImageAssetIds?.[question.correctAnswerIndex] ?? null
-        }
-      }));
-      while (newGameTemplate === 'associative-matching' && initialAssociativePairs.length < 2) {
-        initialAssociativePairs.push({
-          pairId: `pair-${initialAssociativePairs.length + 1}`,
-          leftItem: { id: `left-${initialAssociativePairs.length + 1}`, label: `مفردة ${initialAssociativePairs.length + 1}`, imageAssetId: null },
-          rightItem: { id: `right-${initialAssociativePairs.length + 1}`, label: `اختيار ${initialAssociativePairs.length + 1}`, imageAssetId: null }
+      const existingAssociativePairs = newGameTemplate === content.template
+        ? (content.pairs ?? []).filter((pair) => pair.leftItem?.imageAssetId && pair.rightItem?.imageAssetId)
+        : [];
+      const availableImages = assets.filter((asset) => (
+        asset.kind === 'image' && asset.active && asset.available !== false
+      ));
+      const initialAssociativePairs = existingAssociativePairs.length >= 2
+        ? [...existingAssociativePairs]
+        : availableImages.length >= 2
+          ? [
+              {
+                pairId: 'pair-1',
+                leftItem: {
+                  id: 'left-1',
+                  label: availableImages[0].displayName,
+                  imageAssetId: availableImages[0].id
+                },
+                rightItem: {
+                  id: 'right-1',
+                  label: availableImages[1].displayName,
+                  imageAssetId: availableImages[1].id
+                }
+              },
+              {
+                pairId: 'pair-2',
+                leftItem: {
+                  id: 'left-2',
+                  label: availableImages[1].displayName,
+                  imageAssetId: availableImages[1].id
+                },
+                rightItem: {
+                  id: 'right-2',
+                  label: availableImages[0].displayName,
+                  imageAssetId: availableImages[0].id
+                }
+              }
+            ]
+          : [];
+      const initialSequenceItems = newGameTemplate === content.template && content.items?.length
+        ? [...content.items]
+        : content.questions.slice(0, 8).map((question, index) => ({
+          id: `item-${index + 1}`,
+          label: question.prompt.replace(/^.*?\s+/u, '') || `عنصر ${index + 1}`,
+          imageAssetId: question.promptImageAssetId ?? null,
+          correctOrder: index + 1
+        }));
+      while (newGameTemplate === 'sequence-ordering' && initialSequenceItems.length < 2) {
+        initialSequenceItems.push({
+          id: `item-${initialSequenceItems.length + 1}`,
+          label: `عنصر ${initialSequenceItems.length + 1}`,
+          imageAssetId: null,
+          correctOrder: initialSequenceItems.length + 1
         });
       }
-      const initialSequenceItems = content.items?.length ? [...content.items] : content.questions.slice(0, 8).map((question, index) => ({
-        id: `item-${index + 1}`,
-        label: question.prompt.replace(/^.*?\s+/u, '') || `عنصر ${index + 1}`,
-        imageAssetId: question.promptImageAssetId ?? null,
-        correctOrder: index + 1
-      }));
+      if (newGameTemplate === 'associative-matching' && initialAssociativePairs.length < 2) {
+        throw new Error('لإنشاء لعبة «اختار المتكامل»، ارفع صورتين نشطتين على الأقل في مكتبة الوسائط أولًا.');
+      }
       const newContent = {
         ...content,
         template: newGameTemplate,
         title: newGameTitle.trim(),
         description: newGameDescription.trim(),
+        companion: content.companion.trim() || 'رفيق حرف',
+        companionAnimal: content.companionAnimal.trim() || '🐢',
+        instructions: content.instructions.trim() || 'استمع جيدًا ثم أكمل النشاط.',
         ...(newGameTemplate === 'picture-matching' ? { pairs: initialPairs } : {}),
         ...(newGameTemplate === 'associative-matching' ? { pairs: initialAssociativePairs } : {}),
         ...(newGameTemplate === 'sequence-ordering' ? { items: initialSequenceItems } : {}),

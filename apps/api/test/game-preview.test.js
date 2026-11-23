@@ -30,6 +30,38 @@ test('sequence game definitions validate and default the display mode', () => {
   }));
 });
 
+test('new games can be created from the empty library defaults', () => {
+  const content = {
+    template: 'multiple-choice',
+    title: 'Fresh game',
+    description: 'A new game',
+    companion: 'رفيق حرف',
+    companionAnimal: '🐢',
+    instructions: 'استمع جيدًا ثم أكمل النشاط.',
+    questions: [{
+      prompt: 'اختر الإجابة الصحيحة',
+      options: ['أ', 'ب'],
+      correctAnswerIndex: 0,
+      optionImageAssetIds: [null, null]
+    }],
+    assetAssignments: []
+  };
+
+  assert.equal(createGameSchema.safeParse({ gameId: 'fresh-game', content }).success, true);
+  assert.equal(createGameSchema.safeParse({
+    gameId: 'fresh-sequence',
+    content: {
+      ...content,
+      template: 'sequence-ordering',
+      questions: [],
+      items: [
+        { id: 'item-1', label: 'عنصر 1', imageAssetId: null, correctOrder: 1 },
+        { id: 'item-2', label: 'عنصر 2', imageAssetId: null, correctOrder: 2 }
+      ]
+    }
+  }).success, true);
+});
+
 test('sequence preview preserves the configured ordered or random item mode', async () => {
   const items = [
     { id: 'item-first', label: 'First', imageAssetId: null, correctOrder: 1 },
