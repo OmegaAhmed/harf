@@ -114,6 +114,38 @@ test('recommendation preview rejects stale versions and unrecognized option IDs'
   );
 });
 
+test('draft learning paths can be saved before a questionnaire is published, but published paths cannot', async () => {
+  const service = createService();
+  service.repository.getActiveQuestionnaire = async () => null;
+  service.repository.createPath = async (path) => path;
+
+  const draft = {
+    key: 'draft-before-questionnaire',
+    title: 'مسار تجريبي',
+    description: 'مسودة مسار',
+    status: 'draft',
+    activities: [{ gameId: 'published-game' }],
+    matchingRules: {}
+  };
+  const saved = await service.createPath({ id: 'admin-id' }, draft);
+  assert.equal(saved.key, draft.key);
+  assert.equal(saved.status, 'draft');
+
+  await assert.rejects(
+    service.createPath({ id: 'admin-id' }, { ...draft, key: 'published-needs-questionnaire', status: 'published' }),
+    { code: 'LEARNING_QUESTIONNAIRE_UNAVAILABLE' }
+  );
+
+  service.repository.getPathByKey = async () => ({ status: 'published' });
+  await assert.rejects(
+    service.updatePathByKey({ id: 'admin-id' }, draft.key, {
+      ...draft,
+      status: undefined
+    }),
+    { code: 'LEARNING_QUESTIONNAIRE_UNAVAILABLE' }
+  );
+});
+
 test('required multiple-choice questions reject empty selections for pending child registrations', async () => {
   const service = createService();
   service.childService.getOwnedChild = async () => ({ status: 'pending_registration', ageBand: '6-8' });

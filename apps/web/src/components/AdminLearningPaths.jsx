@@ -80,6 +80,9 @@ function skillLabel(skillId) {
 }
 
 function pathSaveErrorMessage(error) {
+  if (error.code === 'LEARNING_QUESTIONNAIRE_UNAVAILABLE') {
+    return 'لا يمكن نشر المسار قبل نشر استبيان التعلّم. احفظه كمسودة أو انشر الاستبيان أولًا.';
+  }
   if (error.code === 'VALIDATION_ERROR' && Array.isArray(error.details) && error.details.length) {
     const messages = new Set(error.details.map(({ path }) => {
       if (path === 'key') return 'المعرّف الداخلي يجب أن يتكون من أحرف إنجليزية صغيرة وأرقام وشرطة (-)، وبحد أقصى 60 حرفًا.';

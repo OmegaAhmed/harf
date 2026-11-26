@@ -156,7 +156,12 @@ export class LearningPathService {
     if (input.key && input.key !== pathKey) {
       throw new AppError(400, 'LEARNING_PATH_KEY_IMMUTABLE', 'لا يمكن تغيير معرّف المسار بعد إنشائه.');
     }
-    await this.assertPathActivitiesAvailable(input.activities, input);
+    const currentPath = await this.repository.getPathByKey(pathKey);
+    if (!currentPath) throw new AppError(404, 'LEARNING_PATH_NOT_FOUND', 'مسار التعلّم غير موجود.');
+    await this.assertPathActivitiesAvailable(input.activities, {
+      ...input,
+      status: input.status ?? currentPath.status
+    });
     const { key: _key, ...updates } = input;
     const path = await this.repository.updatePathByKey(pathKey, {
       ...updates,
@@ -181,7 +186,12 @@ export class LearningPathService {
     if (unavailable) {
       throw new AppError(400, 'LEARNING_ACTIVITY_UNAVAILABLE', 'لا يمكن إضافة لعبة غير منشورة أو اللعبة التجريبية إلى مسار ولي الأمر.');
     }
-    if (!questionnaire) throw new AppError(503, 'LEARNING_QUESTIONNAIRE_UNAVAILABLE', 'لم يتم إعداد استبيان تعلّم منشور بعد.');
+    if (!questionnaire) {
+      if (pathInput.status === 'published') {
+        throw new AppError(503, 'LEARNING_QUESTIONNAIRE_UNAVAILABLE', 'لم يتم إعداد استبيان تعلّم منشور بعد.');
+      }
+      return;
+    }
     const allowedOptionIds = new Set(questionnaire.questions.flatMap(({ options }) => options.map(({ id }) => id)));
     const allowedSkillIds = new Set(questionnaire.questions.flatMap(({ options }) => options.flatMap(({ skillIds }) => skillIds)));
     const unknownOption = (pathInput.matchingRules?.answerOptionIds ?? []).find((id) => !allowedOptionIds.has(id));
