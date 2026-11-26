@@ -53,17 +53,18 @@ function createApiError(response, payload) {
 }
 
 export async function apiRequest(path, options = {}) {
-  const method = (options.method ?? 'GET').toUpperCase();
+  const { retryTransientResponses = false, ...requestOptions } = options;
+  const method = (requestOptions.method ?? 'GET').toUpperCase();
   const headers = {
     Accept: 'application/json',
-    ...options.headers
+    ...requestOptions.headers
   };
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) {
     headers['X-CSRF-Token'] = csrfToken;
   }
 
   const request = {
-    ...options,
+    ...requestOptions,
     method,
     credentials: 'include',
     headers
@@ -87,7 +88,9 @@ export async function apiRequest(path, options = {}) {
     }
 
     const payload = await response.json().catch(() => null);
-    if (method === 'GET' && attempt < retryDelays.length && isRetryableResponse(response, payload)) {
+    if ((method === 'GET' || retryTransientResponses)
+      && attempt < retryDelays.length
+      && isRetryableResponse(response, payload)) {
       await wait(retryDelays[attempt]);
       continue;
     }

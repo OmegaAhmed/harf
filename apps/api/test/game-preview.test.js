@@ -100,6 +100,52 @@ test('sequence preview preserves the configured ordered or random item mode', as
   assert.equal((await previewMode(undefined)).sequenceOrderMode, 'random');
 });
 
+test('draft previews serve mapped media through the protected admin asset route', async () => {
+  const imageId = '507f1f77bcf86cd799439011';
+  const draftContent = {
+    template: 'multiple-choice',
+    title: 'Word match',
+    description: 'Choose a word.',
+    companion: 'Harf',
+    companionAnimal: 'turtle',
+    instructions: 'Choose an answer.',
+    questions: [{
+      prompt: 'Where is the cat?',
+      options: ['Cat', 'Dog'],
+      correctAnswerIndex: 0,
+      promptImageAssetId: imageId,
+      optionImageAssetIds: [imageId, null]
+    }],
+    assetAssignments: [{ event: 'welcome', kind: 'image', assetId: imageId }]
+  };
+  const service = new GameLibraryService({
+    repository: {
+      async findDefinition(gameId) {
+        return { gameId, publishedVersion: 0, draftContent };
+      }
+    },
+    mediaAssetService: {
+      async listAssets() {
+        return [{
+          id: imageId,
+          kind: 'image',
+          active: true,
+          available: true,
+          mimeType: 'image/png',
+          altText: 'Cat'
+        }];
+      }
+    },
+    authService: null
+  });
+
+  const preview = await service.getDraftPreview('word-match');
+  const adminPreviewUrl = `/api/v1/admin/assets/${imageId}/preview`;
+  assert.equal(preview.questions[0].promptImageUrl, adminPreviewUrl);
+  assert.deepEqual(preview.questions[0].optionImageUrls, [adminPreviewUrl, null]);
+  assert.equal(preview.assets.welcome.imageUrl, adminPreviewUrl);
+});
+
 test('admin game preview scores the saved draft without recording parent data', async () => {
   const draftContent = {
     template: 'multiple-choice',

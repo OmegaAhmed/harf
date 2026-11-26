@@ -3718,6 +3718,14 @@ test('administrator game library verifies uploads and publishes immutable game v
     cookie: adminCookie
   });
   assert.equal(draftPreview.status, 200);
+  const draftPreviewGame = (await draftPreview.json()).game;
+  assert.equal(draftPreviewGame.questions[0].promptImageUrl, `/api/v1/admin/assets/${asset.id}/preview`);
+  assert.deepEqual(draftPreviewGame.questions[0].optionImageUrls, [
+    `/api/v1/admin/assets/${asset.id}/preview`,
+    `/api/v1/admin/assets/${asset.id}/preview`
+  ]);
+  const draftPreviewImage = await request(`/admin/assets/${asset.id}/preview`, { cookie: adminCookie });
+  assert.equal(draftPreviewImage.status, 200);
   const draftPreviewAnswer = await request('/admin/games/managed-content-test/preview/answer', {
     method: 'POST',
     cookie: adminCookie,

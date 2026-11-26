@@ -108,6 +108,7 @@ export default function SpatialGameActivity({
       : `/api/v1/games/${encodeURIComponent(gameId)}/answer`;
     return apiRequest(answerPath, {
       method: 'POST',
+      retryTransientResponses: isAdminPreview,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });

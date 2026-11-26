@@ -85,8 +85,9 @@ function normalizeContent(content) {
   return content;
 }
 
-function publicContent(version, assetMap) {
+function publicContent(version, assetMap, { adminPreview = false } = {}) {
   const content = version.content;
+  const assetUrl = (assetId, kind) => publicAssetUrl(assetMap, assetId, kind, adminPreview);
   const assets = {};
   for (const assignment of content.assetAssignments ?? []) {
     const asset = assetMap.get(String(assignment.assetId));
@@ -97,35 +98,35 @@ function publicContent(version, assetMap) {
       continue;
     }
     if (assignment.kind === 'animation' && asset.mimeType === 'image/gif') {
-      assets[assignment.event].animationUrl = `/api/v1/media/${String(asset._id ?? asset.id)}`;
+      assets[assignment.event].animationUrl = assetUrl(assignment.assetId, assignment.kind);
       continue;
     }
-    assets[assignment.event][`${assignment.kind}Url`] = `/api/v1/media/${String(asset._id ?? asset.id)}`;
+    assets[assignment.event][`${assignment.kind}Url`] = assetUrl(assignment.assetId, assignment.kind);
   }
   const spatial = content.spatial ? {
     ...content.spatial,
     scene: {
       ...content.spatial.scene,
       backgroundUrl: content.spatial.scene.backgroundAssetId
-        ? publicAssetUrl(assetMap, content.spatial.scene.backgroundAssetId, 'image')
+        ? assetUrl(content.spatial.scene.backgroundAssetId, 'image')
         : null,
       objects: content.spatial.scene.objects.map((item) => ({
         ...item,
-        imageUrl: publicAssetUrl(assetMap, item.assetId, 'image'),
+        imageUrl: assetUrl(item.assetId, 'image'),
         altText: publicAssetAlt(assetMap, item.assetId, 'image')
       }))
     },
     steps: content.spatial.steps.map((step) => ({
       ...step,
       instructionAudioUrl: step.instructionAudioAssetId
-        ? publicAssetUrl(assetMap, step.instructionAudioAssetId, 'audio')
+        ? assetUrl(step.instructionAudioAssetId, 'audio')
         : null
     }))
   } : null;
   const sequenceItems = content.template === 'sequence-ordering'
     ? (content.items ?? []).map((item) => ({
       ...item,
-      imageUrl: item.imageAssetId ? publicAssetUrl(assetMap, item.imageAssetId, 'image') : null,
+      imageUrl: item.imageAssetId ? assetUrl(item.imageAssetId, 'image') : null,
       imageAlt: item.imageAssetId ? publicAssetAlt(assetMap, item.imageAssetId, 'image') : ''
     }))
     : null;
@@ -134,15 +135,15 @@ function publicContent(version, assetMap) {
       ...pair,
       leftItem: pair.leftItem ? {
         ...pair.leftItem,
-        imageUrl: pair.leftItem.imageAssetId ? publicAssetUrl(assetMap, pair.leftItem.imageAssetId, 'image') : null,
+        imageUrl: pair.leftItem.imageAssetId ? assetUrl(pair.leftItem.imageAssetId, 'image') : null,
         imageAlt: pair.leftItem.imageAssetId ? publicAssetAlt(assetMap, pair.leftItem.imageAssetId, 'image') : ''
       } : null,
       rightItem: pair.rightItem ? {
         ...pair.rightItem,
-        imageUrl: pair.rightItem.imageAssetId ? publicAssetUrl(assetMap, pair.rightItem.imageAssetId, 'image') : null,
+        imageUrl: pair.rightItem.imageAssetId ? assetUrl(pair.rightItem.imageAssetId, 'image') : null,
         imageAlt: pair.rightItem.imageAssetId ? publicAssetAlt(assetMap, pair.rightItem.imageAssetId, 'image') : ''
       } : null,
-      imageUrl: pair.imageAssetId ? publicAssetUrl(assetMap, pair.imageAssetId, 'image') : null,
+      imageUrl: pair.imageAssetId ? assetUrl(pair.imageAssetId, 'image') : null,
       imageAlt: pair.imageAssetId ? publicAssetAlt(assetMap, pair.imageAssetId, 'image') : ''
     }))
     : null;
@@ -154,7 +155,7 @@ function publicContent(version, assetMap) {
     companion: content.companion,
     companionAnimal: content.companionAnimal,
     companionAnimalImageUrl: content.companionAnimalImageAssetId
-      ? publicAssetUrl(assetMap, content.companionAnimalImageAssetId, 'image')
+      ? assetUrl(content.companionAnimalImageAssetId, 'image')
       : null,
     instructions: content.instructions,
     version: String(version.version),
@@ -172,15 +173,15 @@ function publicContent(version, assetMap) {
       correctFeedback: question.correctFeedback ?? '',
       incorrectFeedback: question.incorrectFeedback ?? '',
       ...(question.promptImageAssetId ? {
-        promptImageUrl: publicAssetUrl(assetMap, question.promptImageAssetId, 'image'),
+        promptImageUrl: assetUrl(question.promptImageAssetId, 'image'),
         promptImageAlt: publicAssetAlt(assetMap, question.promptImageAssetId, 'image')
       } : {}),
       ...(question.promptAudioAssetId ? {
-        promptAudioUrl: publicAssetUrl(assetMap, question.promptAudioAssetId, 'audio')
+        promptAudioUrl: assetUrl(question.promptAudioAssetId, 'audio')
       } : {}),
       ...(question.optionImageAssetIds ? {
         optionImageUrls: question.optionImageAssetIds.map((assetId) => (
-          assetId ? publicAssetUrl(assetMap, assetId, 'image') : null
+          assetId ? assetUrl(assetId, 'image') : null
         )),
         optionImageAltTexts: question.optionImageAssetIds.map((assetId) => (
           assetId ? publicAssetAlt(assetMap, assetId, 'image') : ''
@@ -195,10 +196,13 @@ function publicContent(version, assetMap) {
   };
 }
 
-function publicAssetUrl(assetMap, assetId, kind) {
+function publicAssetUrl(assetMap, assetId, kind, adminPreview = false) {
   const asset = assetMap.get(String(assetId));
-  if (!asset?.active || asset.kind !== kind) return null;
-  return `/api/v1/media/${String(asset._id ?? asset.id)}`;
+  if (!asset?.active || asset.available === false || asset.kind !== kind) return null;
+  const assetKey = String(asset._id ?? asset.id);
+  return adminPreview
+    ? `/api/v1/admin/assets/${assetKey}/preview`
+    : `/api/v1/media/${assetKey}`;
 }
 
 function publicAssetAlt(assetMap, assetId, kind) {
@@ -263,7 +267,7 @@ export class GameLibraryService {
     const assetMap = new Map((await this.mediaAssetService.listAssets()).map((asset) => [String(asset.id), asset]));
     const content = normalizeContent(definition.draftContent ?? { template: 'multiple-choice', questions: [], title: '', description: '', companion: '', companionAnimal: '🐢', instructions: '' });
     return {
-      ...publicContent({ gameId: definition.gameId, version: definition.publishedVersion || 1, content }, assetMap),
+      ...publicContent({ gameId: definition.gameId, version: definition.publishedVersion || 1, content }, assetMap, { adminPreview: true }),
       access: 'trial'
     };
   }

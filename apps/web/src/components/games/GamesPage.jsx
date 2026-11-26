@@ -465,6 +465,7 @@ function GamePlay({ gameId, settings }) {
         : `/api/v1/games/${encodeURIComponent(gameId)}/answer`;
       const { answer } = await apiRequest(answerPath, {
         method: 'POST',
+        retryTransientResponses: isAdminPreview,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           questionIndex: targetQuestionIndex,
