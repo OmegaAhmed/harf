@@ -30,8 +30,10 @@ const defaultPlatformSettings = {
 function platformBrandStyle(settings) {
   return {
     '--blue': settings.colors.primary,
+    '--blue-strong': readableTextColor(settings.colors.primary),
     '--teal': settings.colors.teal,
     '--purple': settings.colors.purple,
+    '--purple-strong': readableTextColor(settings.colors.purple),
     '--teal-text': readableTextColor(settings.colors.teal),
     '--yellow': settings.colors.yellow,
     '--coral': settings.colors.coral,
@@ -795,7 +797,7 @@ export default function App() {
     </main>;
   }
   if (currentRoute === '/dashboard') return <div className="platform-brand" style={brandStyle}>{platformWarning}<AuthPanel standaloneDashboard logoUrl={platformSettings.logoUrl} /></div>;
-  if (currentRoute === '/admin') return <div className="platform-brand" style={brandStyle}>{platformWarning}<AuthPanel standaloneAdmin logoUrl={platformSettings.logoUrl} /></div>;
+  if (currentRoute === '/admin') return <div className="platform-brand" style={brandStyle}>{platformWarning}<AuthPanel standaloneAdmin logoUrl={platformSettings.logoUrl} onPlatformSettingsChange={setPlatformSettings} /></div>;
   if (currentRoute === '/specialist') return <div className="platform-brand" style={brandStyle}>{platformWarning}<AuthPanel standaloneSpecialist logoUrl={platformSettings.logoUrl} /></div>;
   if (currentRoute === '/specialists') return <div className="platform-brand" style={brandStyle}>{platformWarning}<SpecialistsPage settings={platformSettings} /></div>;
   if (currentRoute === '/games' || currentRoute.startsWith('/games/')) {

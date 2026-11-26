@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LearningPathService } from '../src/services/learningPathService.js';
 import {
+  learningPathCreateSchema,
   questionnaireSchema,
   questionnaireSubmissionSchema
 } from '../src/validation/learningPath.js';
@@ -260,6 +261,42 @@ test('questionnaire editor rejects option IDs reused across questions', () => {
         ]
       }
     ]
+  }).success, false);
+});
+
+test('learning paths require a result sample at least as large as the minimum attempts', () => {
+  const path = {
+    key: 'visual-vocabulary',
+    title: 'مسار المفردات',
+    description: 'مسار لتطوير المفردات.',
+    status: 'draft',
+    ageBands: [],
+    skillIds: [],
+    objectives: [],
+    matchingRules: {
+      skillIds: [],
+      answerOptionIds: [],
+      ageBands: [],
+      minimumMatches: 1,
+      priority: 0,
+      assignmentType: 'either'
+    },
+    activities: [{
+      gameId: 'published-game',
+      title: 'لعبة منشورة',
+      learningArea: 'المفردات',
+      description: 'نشاط ضمن المسار.',
+      required: true,
+      repeatable: true,
+      skillIds: []
+    }],
+    rules: { minimumAttempts: 3, sampleSize: 5, targetAccuracyPercent: 75 }
+  };
+
+  assert.equal(learningPathCreateSchema.safeParse(path).success, true);
+  assert.equal(learningPathCreateSchema.safeParse({
+    ...path,
+    rules: { ...path.rules, minimumAttempts: 6, sampleSize: 5 }
   }).success, false);
 });
 

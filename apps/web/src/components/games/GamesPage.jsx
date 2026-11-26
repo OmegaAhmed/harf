@@ -58,6 +58,21 @@ function randomizedIndexes(length) {
   return indexes;
 }
 
+function gameBrandStyle(settings) {
+  return {
+    '--blue': settings.colors.primary,
+    '--blue-strong': readableTextColor(settings.colors.primary),
+    '--teal': settings.colors.teal,
+    '--teal-text': readableTextColor(settings.colors.teal),
+    '--purple': settings.colors.purple,
+    '--purple-strong': readableTextColor(settings.colors.purple),
+    '--yellow': settings.colors.yellow,
+    '--coral': settings.colors.coral,
+    '--ink': settings.colors.ink ?? '#273DA8',
+    '--muted': readableTextColor(settings.colors.muted)
+  };
+}
+
 function GameHeader({ backHref = '/games', showAuth = true, immersive = false, onBack, logoUrl = null }) {
   return (
     <header className={`game-page__header${immersive ? ' game-page__header--immersive' : ''}`}>
@@ -126,16 +141,7 @@ function GameCatalog({ settings }) {
   }, [childId, reloadKey]);
 
   return (
-    <div className="game-page game-page--catalog" style={{
-      '--blue': settings.colors.primary,
-      '--teal': settings.colors.teal,
-      '--teal-text': readableTextColor(settings.colors.teal),
-      '--purple': settings.colors.purple,
-      '--yellow': settings.colors.yellow,
-      '--coral': settings.colors.coral,
-      '--ink': settings.colors.ink ?? '#273DA8',
-      '--muted': readableTextColor(settings.colors.muted)
-    }}>
+    <div className="game-page game-page--catalog" style={gameBrandStyle(settings)}>
       <GameHeader backHref={childId ? `/dashboard?section=profile&childId=${encodeURIComponent(childId)}` : '/'} logoUrl={settings.logoUrl} />
       <main className="game-page__main">
         <header className="game-page__intro">
@@ -217,7 +223,7 @@ function GameCatalog({ settings }) {
   );
 }
 
-function GamePlay({ gameId }) {
+function GamePlay({ gameId, settings }) {
   const [game, setGame] = useState(null);
   const [children, setChildren] = useState([]);
   const [selectedChildId, setSelectedChildId] = useState('');
@@ -641,7 +647,7 @@ function GamePlay({ gameId }) {
   }, [game, started, matchedPairs, completion]);
 
   return (
-    <div className="game-page game-page--play">
+    <div className="game-page game-page--play" style={gameBrandStyle(settings)}>
       <GameHeader
         backHref={returnHref}
         showAuth={false}
@@ -1082,5 +1088,5 @@ function GamePlay({ gameId }) {
 
 export default function GamesPage({ settings }) {
   const gameId = routeGameId();
-  return gameId ? <GamePlay gameId={gameId} /> : <GameCatalog settings={settings} />;
+  return gameId ? <GamePlay gameId={gameId} settings={settings} /> : <GameCatalog settings={settings} />;
 }

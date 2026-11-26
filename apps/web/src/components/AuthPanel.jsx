@@ -34,7 +34,13 @@ function roleLabel(role) {
   return roleLabels[role] ?? 'زائر';
 }
 
-export default function AuthPanel({ standaloneDashboard = false, standaloneAdmin = false, standaloneSpecialist = false, logoUrl = null }) {
+export default function AuthPanel({
+  standaloneDashboard = false,
+  standaloneAdmin = false,
+  standaloneSpecialist = false,
+  logoUrl = null,
+  onPlatformSettingsChange
+}) {
   const [user, setUser] = useState(null);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [view, setView] = useState('login');
@@ -451,6 +457,7 @@ export default function AuthPanel({ standaloneDashboard = false, standaloneAdmin
                   user={user}
                   onSignOut={signOut}
                   onProfileUpdated={setUser}
+                  onPlatformSettingsChange={onPlatformSettingsChange}
                   onReauthenticate={() => {
                     setUser(null);
                     startView('login');
@@ -537,9 +544,19 @@ export default function AuthPanel({ standaloneDashboard = false, standaloneAdmin
   const modalThemeStyle = themeStyles
     ? Object.fromEntries([
       '--blue',
+      '--blue-strong',
+      '--sky',
+      '--beige',
+      '--brand-border',
+      '--brand-border-soft',
+      '--brand-wash',
+      '--brand-wash-soft',
+      '--purple-wash',
+      '--teal-wash',
       '--teal',
       '--teal-text',
       '--purple',
+      '--purple-strong',
       '--yellow',
       '--coral',
       '--ink',

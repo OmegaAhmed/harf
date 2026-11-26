@@ -79,6 +79,27 @@ function skillLabel(skillId) {
   return learningSkills.find((skill) => skill.id === skillId)?.label ?? skillId;
 }
 
+function pathSaveErrorMessage(error) {
+  if (error.code === 'VALIDATION_ERROR' && Array.isArray(error.details) && error.details.length) {
+    const messages = new Set(error.details.map(({ path }) => {
+      if (path === 'key') return 'المعرّف الداخلي يجب أن يتكون من أحرف إنجليزية صغيرة وأرقام وشرطة (-)، وبحد أقصى 60 حرفًا.';
+      if (path === 'title') return 'أدخل اسمًا للمسار لا يتجاوز 120 حرفًا.';
+      if (path === 'description') return 'أدخل وصفًا للمسار لا يتجاوز 500 حرف.';
+      if (path.startsWith('activities')) return 'تحقق من الأنشطة المضافة، واختر ألعابًا منشورة فقط.';
+      if (path.startsWith('rules')) return 'تحقق من إعدادات التقدم: المحاولات بين 2 و10، وعينة النتائج لا تقل عن الحد الأدنى، ونسبة الدقة بين 50 و100.';
+      if (path.startsWith('matchingRules')) return 'تحقق من معايير المطابقة وحدودها.';
+      if (path === 'ageBands') return 'تحقق من الفئات العمرية المحددة.';
+      if (path === 'skillIds' || path === 'objectives') return 'تحقق من المهارات والأهداف المحددة.';
+      return '';
+    }).filter(Boolean));
+    if (messages.size) return `راجع بيانات المسار: ${[...messages].join(' ')}`;
+  }
+  if (error.status >= 500) {
+    return 'تعذر تأكيد حفظ المسار بسبب عطل في الخدمة. حدّث قائمة المسارات للتحقق من الحفظ قبل إعادة المحاولة.';
+  }
+  return error.message;
+}
+
 export default function AdminLearningPaths({ logoUrl }) {
   const [tab, setTab] = useState('paths');
   const [paths, setPaths] = useState([]);
@@ -244,9 +265,15 @@ export default function AdminLearningPaths({ logoUrl }) {
       );
       setNotice('تم حفظ مسار التعلّم.');
       setEditingPath(result.path);
-      await load();
+      setPaths((current) => {
+        const pathExists = current.some(({ key }) => key === result.path.key);
+        return pathExists
+          ? current.map((path) => path.key === result.path.key ? result.path : path)
+          : [...current, result.path];
+      });
+      setActiveLevelPathKey((current) => current || result.path.key);
     } catch (requestError) {
-      setError(requestError.message);
+      setError(pathSaveErrorMessage(requestError));
     } finally {
       setSaving(false);
     }
@@ -899,11 +926,19 @@ export default function AdminLearningPaths({ logoUrl }) {
                 <div className="admin-path-rule-controls">
                   <label>الحد الأدنى للمحاولات
                     <input type="number" min="2" max="10" value={editingPath.rules.minimumAttempts}
-                      onChange={(event) => updatePath('rules', { ...editingPath.rules, minimumAttempts: Number(event.target.value) })} />
+                      onChange={(event) => {
+                        const minimumAttempts = Number(event.target.value);
+                        updatePath('rules', {
+                          ...editingPath.rules,
+                          minimumAttempts,
+                          sampleSize: Math.max(editingPath.rules.sampleSize, minimumAttempts)
+                        });
+                      }} />
                   </label>
                   <label>عدد المحاولات التي تُراجع
-                    <input type="number" min="2" max="10" value={editingPath.rules.sampleSize}
+                    <input type="number" min={editingPath.rules.minimumAttempts} max="10" value={editingPath.rules.sampleSize}
                       onChange={(event) => updatePath('rules', { ...editingPath.rules, sampleSize: Number(event.target.value) })} />
+                    <small>لا يمكن أن يقل عن الحد الأدنى للمحاولات.</small>
                   </label>
                   <label>نسبة الإجابات الصحيحة المطلوبة (%)
                     <input type="number" min="50" max="100" value={editingPath.rules.targetAccuracyPercent}

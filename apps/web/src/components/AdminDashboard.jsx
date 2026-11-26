@@ -118,7 +118,13 @@ function priceToMinorUnits(value) {
     : null;
 }
 
-export default function AdminDashboard({ user, onSignOut, onReauthenticate, onProfileUpdated }) {
+export default function AdminDashboard({
+  user,
+  onSignOut,
+  onReauthenticate,
+  onProfileUpdated,
+  onPlatformSettingsChange
+}) {
   const permissions = user.permissions ?? [];
   const hasPermission = (permission) => permissions.includes(permission);
   const visibleViews = useMemo(() => views.filter((item) => (
@@ -296,6 +302,7 @@ export default function AdminDashboard({ user, onSignOut, onReauthenticate, onPr
       .then(([{ settings }, assetResult]) => {
         if (!active) return;
         setPlatformSettings(settings);
+        onPlatformSettingsChange?.(settings);
         if (assetResult) {
           setPlatformImages(assetResult.assets.filter((asset) => (
             asset.kind === 'image' && asset.active && asset.available
@@ -309,7 +316,7 @@ export default function AdminDashboard({ user, onSignOut, onReauthenticate, onPr
         if (active && view === 'platform') setLoadingPlatform(false);
       });
     return () => { active = false; };
-  }, [view]);
+  }, [view, onPlatformSettingsChange]);
 
   const counts = useMemo(() => ({
     total: accounts.length,
@@ -475,10 +482,12 @@ export default function AdminDashboard({ user, onSignOut, onReauthenticate, onPr
   };
 
   const updatePlatformColor = (colorName, value) => {
-    setPlatformSettings((current) => ({
-      ...current,
-      colors: { ...current.colors, [colorName]: value }
-    }));
+    const updatedSettings = {
+      ...platformSettings,
+      colors: { ...platformSettings.colors, [colorName]: value }
+    };
+    setPlatformSettings(updatedSettings);
+    onPlatformSettingsChange?.(updatedSettings);
   };
 
   const updateHomepageText = (field, value) => {
@@ -525,6 +534,7 @@ export default function AdminDashboard({ user, onSignOut, onReauthenticate, onPr
         })
       });
       setPlatformSettings(settings);
+      onPlatformSettingsChange?.(settings);
       setNotice('تم حفظ هوية المنصة ومحتوى الصفحة الرئيسية.');
     } catch (requestError) {
       reportError(requestError);

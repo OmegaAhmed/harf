@@ -2327,7 +2327,7 @@ export default function ParentDashboard({
                               aria-label={`${skill.label}: الأنشطة المكتملة`}
                               aria-valuemin="0" aria-valuemax="100" aria-valuenow={skill.completionPercent}
                               aria-valuetext={`${skill.completed} من ${skill.activities} أنشطة مكتملة`}>
-                              <span style={{ width: `${skill.completionPercent}%`, '--skill-color': ['#2aa89b', '#8474cf', '#65a9dc', '#e6a14a', '#5d83ca', '#cf7ea1'][index % 6] }} />
+                              <span style={{ width: `${skill.completionPercent}%`, '--skill-color': ['var(--teal)', 'var(--purple)', 'var(--blue)', 'var(--yellow)', 'var(--coral)', 'var(--blue-strong, var(--blue))'][index % 6] }} />
                             </div>
                             <small>{skill.completed} من {skill.activities} أنشطة مكتملة · {skill.attempts} محاولة مسجلة</small>
                           </div>
