@@ -292,7 +292,7 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
     if (!file) return;
     setBusy(true);
     setError('');
-    setNotice('');
+    setNotice(['audio', 'video'].includes(asset.kind) ? 'جارٍ تجهيز الملف...' : '');
     try {
       const optimizedFile = await optimizeImageFile(file);
       const metadata = {
@@ -698,11 +698,12 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
     const form = event.currentTarget;
     setBusy(true);
     setError('');
-    setNotice(['audio', 'video'].includes(uploadKind) ? 'جارٍ تجهيز ملف الوسائط قبل الرفع...' : '');
+    setNotice(['audio', 'video'].includes(uploadKind) ? 'جارٍ تجهيز الملف...' : '');
     try {
       const file = uploadKind === 'image'
         ? await optimizeImageFile(uploadFile)
         : await optimizeMediaFile(uploadFile, uploadKind);
+      setNotice('جارٍ رفع الملف إلى التخزين الآمن...');
       const storageName = await uploadPrivateBlob(
         file,
         '/api/v1/admin/assets/upload-token',
@@ -716,6 +717,9 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
         category: uploadCategory,
         tags: uploadTags
       };
+      setNotice(storageName
+        ? 'اكتمل الرفع، جارٍ التحقق من نوع الملف وحفظه...'
+        : 'جارٍ رفع الملف والتحقق منه...');
       const result = await apiRequest('/api/v1/admin/assets', storageName ? {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -777,12 +781,16 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
       const optimizedFile = asset.kind === 'image'
         ? await optimizeImageFile(file)
         : await optimizeMediaFile(file, asset.kind);
+      setNotice('جارٍ رفع الملف البديل إلى التخزين الآمن...');
       const storageName = await uploadPrivateBlob(
         optimizedFile,
         '/api/v1/admin/assets/upload-token',
         'media',
         asset.kind === 'animation' ? 'application/json' : optimizedFile.type
       );
+      setNotice(storageName
+        ? 'اكتمل الرفع، جارٍ التحقق من الملف وتحديث الأصل...'
+        : 'جارٍ رفع الملف والتحقق منه...');
       await apiRequest(`/api/v1/admin/assets/${asset.id}/replace`, storageName ? {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1605,7 +1613,7 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
               </div>
             )}
             <button type="submit" className="button button--primary" disabled={busy || !uploadFile}>رفع وفحص الملف</button>
-            <small>تُصغّر الصور الكبيرة وتُضغط تلقائيًا، كما تُحوّل ملفات الصوت والفيديو الكبيرة إلى WebM عند دعم المتصفح. قد يستغرق التحويل وقتًا يقارب مدة الملف؛ وإذا لم يدعم المتصفح التحويل أو لم يقلل الحجم، يُرفع الملف الأصلي ضمن الحد المسموح. يُفحص المحتوى الفعلي للملف قبل حفظه.</small>
+            <small>يُرفع الصوت والفيديو مباشرةً إذا كانا ضمن الحد المسموح (10 ميجابايت للصوت و20 للفيديو)، ثم يُفحص المحتوى الفعلي بعد اكتمال الرفع. تُضغط الملفات الأكبر من الحد قبل الرفع لتقليل حجمها، وقد يستغرق تجهيزها وقتًا بحسب مدتها. تُصغّر الصور الكبيرة تلقائيًا.</small>
           </form>
           <section className="admin-library__panel">
             <h3>الأصول المحفوظة ({filteredAssets.length} من {assets.length})</h3>

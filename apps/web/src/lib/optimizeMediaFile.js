@@ -2,8 +2,6 @@ const AUDIO_MAX_BYTES = 10 * 1024 * 1024;
 const VIDEO_MAX_BYTES = 20 * 1024 * 1024;
 const AUDIO_SOURCE_MAX_BYTES = 25 * 1024 * 1024;
 const VIDEO_SOURCE_MAX_BYTES = 50 * 1024 * 1024;
-const AUDIO_OPTIMIZE_THRESHOLD_BYTES = 1024 * 1024;
-const VIDEO_OPTIMIZE_THRESHOLD_BYTES = 2 * 1024 * 1024;
 const MAX_VIDEO_WIDTH = 1280;
 const MAX_VIDEO_HEIGHT = 720;
 const AUDIO_RECORDER_TYPES = ['audio/webm;codecs=opus', 'audio/webm'];
@@ -108,8 +106,7 @@ async function optimizeAudioFile(file) {
   if (file.size > AUDIO_SOURCE_MAX_BYTES) {
     throw new Error('حجم ملف الصوت الأصلي يتجاوز 25 ميجابايت. اختر ملفًا أصغر.');
   }
-  if (file.size <= AUDIO_OPTIMIZE_THRESHOLD_BYTES
-    || (file.type === 'audio/webm' && file.size <= AUDIO_MAX_BYTES)) return file;
+  if (file.size <= AUDIO_MAX_BYTES) return file;
   const mimeType = findSupportedRecorderType(AUDIO_RECORDER_TYPES, 'audio');
   const AudioContextConstructor = globalThis.AudioContext ?? globalThis.webkitAudioContext;
   if (!mimeType || !AudioContextConstructor) {
@@ -172,8 +169,7 @@ async function optimizeVideoFile(file) {
   if (file.size > VIDEO_SOURCE_MAX_BYTES) {
     throw new Error('حجم ملف الفيديو الأصلي يتجاوز 50 ميجابايت. اختر ملفًا أقصر أو أصغر.');
   }
-  if (file.size <= VIDEO_OPTIMIZE_THRESHOLD_BYTES
-    || (file.type === 'video/webm' && file.size <= VIDEO_MAX_BYTES)) return file;
+  if (file.size <= VIDEO_MAX_BYTES) return file;
   const mimeType = findSupportedRecorderType(VIDEO_RECORDER_TYPES, 'video');
   const AudioContextConstructor = globalThis.AudioContext ?? globalThis.webkitAudioContext;
   if (!mimeType || !AudioContextConstructor) {
