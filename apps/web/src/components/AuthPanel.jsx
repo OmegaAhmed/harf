@@ -46,6 +46,8 @@ export default function AuthPanel({ standaloneDashboard = false, standaloneAdmin
   const [resetToken, setResetToken] = useState('');
   const [documentUploadBusy, setDocumentUploadBusy] = useState(false);
   const queryProcessed = useRef(false);
+  const authDialogRef = useRef(null);
+  const previousFocusRef = useRef(null);
 
   useEffect(() => {
     if (queryProcessed.current) return;
@@ -87,11 +89,47 @@ export default function AuthPanel({ standaloneDashboard = false, standaloneAdmin
 
   useEffect(() => {
     if (!open) return undefined;
-    const closeOnEscape = (event) => {
-      if (event.key === 'Escape') setOpen(false);
+    const bodyOverflow = document.body.style.overflow;
+    previousFocusRef.current = document.activeElement;
+    document.body.style.overflow = 'hidden';
+
+    const dialog = authDialogRef.current;
+    const getFocusableElements = () => [...(dialog?.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    ) ?? [])].filter((element) => element.getClientRects().length > 0);
+    const initialFocus = dialog?.querySelector('input:not([type="hidden"]):not([disabled])')
+      ?? getFocusableElements()[0];
+    initialFocus?.focus();
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const focusableElements = getFocusableElements();
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+      if (!firstElement) {
+        event.preventDefault();
+        dialog?.focus();
+      } else if (event.shiftKey && (document.activeElement === firstElement || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (!event.shiftKey && (document.activeElement === lastElement || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        firstElement.focus();
+      }
     };
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = bodyOverflow;
+      if (previousFocusRef.current instanceof HTMLElement && document.contains(previousFocusRef.current)) {
+        previousFocusRef.current.focus();
+      }
+    };
   }, [open]);
 
   const startView = (nextView) => {
@@ -391,14 +429,16 @@ export default function AuthPanel({ standaloneDashboard = false, standaloneAdmin
       <div className="family-page" dir="rtl">
         <header className="family-page__header">
           <BrandLogo homeHref="/" logoUrl={logoUrl} />
-          <div className="family-page__header-actions">
-            <a className="button button--small button--outline" href="/">العودة للموقع</a>
-            {canUseDashboard && (
-              <button className="button button--small button--primary" type="button" disabled={busy} onClick={signOut}>
-                تسجيل الخروج
-              </button>
-            )}
-          </div>
+          {!(standaloneAdmin && canUseDashboard) && (
+            <div className="family-page__header-actions">
+              <a className="button button--small button--outline" href="/">العودة للموقع</a>
+              {canUseDashboard && (
+                <button className="button button--small button--primary" type="button" disabled={busy} onClick={signOut}>
+                  تسجيل الخروج
+                </button>
+              )}
+            </div>
+          )}
         </header>
         <a className="skip-link" href="#family-main">انتقل إلى محتوى لوحة التحكم</a>
         <main className="family-page__main" id="family-main">
@@ -471,7 +511,11 @@ export default function AuthPanel({ standaloneDashboard = false, standaloneAdmin
             </section>
           ) : (
             <section className="family-page__auth">
-              <h1>{view === 'forgot' ? 'استعادة كلمة المرور' : view === 'register' ? 'إنشاء حساب' : standaloneAdmin ? 'دخول المسؤول' : 'دخول ولي الأمر'}</h1>
+              <h1>{view === 'forgot' ? 'استعادة كلمة المرور'
+                : view === 'register' ? 'إنشاء حساب'
+                  : standaloneAdmin ? 'دخول المسؤول'
+                    : standaloneSpecialist ? 'دخول الأخصائي'
+                      : 'دخول ولي الأمر'}</h1>
               <p>{standaloneAdmin
                 ? 'سجّل الدخول بحساب المسؤول للوصول إلى لوحة الإدارة.'
                 : standaloneSpecialist
@@ -494,6 +538,7 @@ export default function AuthPanel({ standaloneDashboard = false, standaloneAdmin
     ? Object.fromEntries([
       '--blue',
       '--teal',
+      '--teal-text',
       '--purple',
       '--yellow',
       '--coral',
@@ -516,7 +561,7 @@ export default function AuthPanel({ standaloneDashboard = false, standaloneAdmin
           <div className="auth-backdrop" style={modalThemeStyle} onMouseDown={(event) => {
             if (event.target === event.currentTarget) setOpen(false);
           }}>
-            <section className="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+            <section ref={authDialogRef} className="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-title" tabIndex={-1}>
               <button className="auth-close" type="button" aria-label="إغلاق" onClick={() => setOpen(false)}>×</button>
               <h2 id="auth-title">
                 {view === 'register' ? 'إنشاء حساب' : view === 'login' ? 'أهلًا بك في حرف' : view === 'profile' ? 'الملف المهني' : view === 'account' ? 'حسابك في حرف' : view === 'forgot' ? 'استعادة كلمة المرور' : 'كلمة مرور جديدة'}

@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import BrandLogo from './components/BrandLogo.jsx';
 import AuthPanel from './components/AuthPanel.jsx';
 import { apiRequest, getApiUrl } from './lib/api.js';
+import { readableTextColor } from './lib/readableTextColor.js';
 import SpecialistCard from './components/SpecialistCard.jsx';
 
 const GamesPage = lazy(() => import('./components/games/GamesPage.jsx'));
@@ -20,7 +21,7 @@ const defaultPlatformSettings = {
     eyebrow: 'منصة تفاعلية لتنمية مهارات التخاطب واللغة',
     title: 'معًا .. ننطق\nالمستقبل',
     description: 'ألعاب وقصص صغيرة تساعد طفلك على نطق الحروف والكلمات بثقة، خطوة بخطوة، في كل مرة بداية لقصة أجمل.',
-    primaryAction: 'جرّب اللعبة المجانية',
+    primaryAction: 'استكشف الألعاب',
     secondaryAction: 'شوف الفكرة'
   },
   heroImages: []
@@ -31,10 +32,11 @@ function platformBrandStyle(settings) {
     '--blue': settings.colors.primary,
     '--teal': settings.colors.teal,
     '--purple': settings.colors.purple,
+    '--teal-text': readableTextColor(settings.colors.teal),
     '--yellow': settings.colors.yellow,
     '--coral': settings.colors.coral,
     '--ink': settings.colors.ink ?? '#273DA8',
-    '--muted': settings.colors.muted ?? '#7884B5'
+    '--muted': readableTextColor(settings.colors.muted)
   };
 }
 
@@ -88,11 +90,12 @@ const questions = [
   }
 ];
 
-function SectionHeading({ eyebrow, title, description }) {
+function SectionHeading({ eyebrow, title, description, level = 2 }) {
+  const Heading = level === 1 ? 'h1' : 'h2';
   return (
     <div className="section-heading">
       {eyebrow && <span className="section-heading__eyebrow">{eyebrow}</span>}
-      <h2>{title}</h2>
+      <Heading>{title}</Heading>
       {description && <p>{description}</p>}
     </div>
   );
@@ -115,10 +118,10 @@ function Header({ specialistPage = false, settings }) {
   }, [menuOpen]);
   return (
     <header className={`site-header${menuOpen ? ' is-menu-open' : ''}`}>
-      <BrandLogo compact logoUrl={settings.logoUrl} />
+      <BrandLogo compact homeHref={specialistPage ? '/' : '#home'} logoUrl={settings.logoUrl} />
       <div className="header-actions">
         <a className="button button--small button--primary header-cta" href={homeAnchor('plans')}>
-          ابدأ دلوقتي
+          شوف الباقات
         </a>
         <AuthPanel />
       </div>
@@ -174,7 +177,7 @@ function TrialGames() {
       <SectionHeading
         eyebrow="ابدأوا مجانًا"
         title="الألعاب التجريبية للزوار"
-        description="جرّبوا أربع ألعاب تعليمية قصيرة مجانًا، دون إنشاء حساب أو حجز موعد."
+        description="أنشطة تعليمية قصيرة متاحة حسب الألعاب المنشورة، دون إنشاء حساب أو حجز موعد."
       />
       {loading && <p className="directory-message" role="status">جارٍ تحميل الألعاب…</p>}
       {error && (
@@ -193,7 +196,7 @@ function TrialGames() {
             <article className="game-card game-card--trial" key={game.id}>
               <span className="game-card__animal" aria-hidden="true">
                 {game.companionAnimalImageUrl
-                  ? <img src={getApiUrl(game.companionAnimalImageUrl)} alt="" />
+                  ? <img src={getApiUrl(game.companionAnimalImageUrl)} alt="" loading="lazy" decoding="async" />
                   : game.companionAnimal}
               </span>
               <span className="game-card__tag">مجانية للزوار</span>
@@ -217,6 +220,7 @@ function SpecialistsDirectory() {
   const [specialists, setSpecialists] = useState([]);
   const [loadingSpecialists, setLoadingSpecialists] = useState(true);
   const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
   const carouselRef = useRef(null);
 
   useEffect(() => {
@@ -236,7 +240,7 @@ function SpecialistsDirectory() {
     };
     loadDirectory();
     return () => { active = false; };
-  }, []);
+  }, [reloadKey]);
 
   return (
     <section className="section section--white" id="specialists">
@@ -245,7 +249,14 @@ function SpecialistsDirectory() {
         description="تعرف على الأخصائيين المعتمدين، وتحقق من المواعيد المتاحة واحجز عند الحاجة. الحجز اختياري."
       />
       {loadingSpecialists && <p className="directory-message" role="status">جارٍ تحميل الأخصائيين…</p>}
-      {error && <p className="directory-message" role="alert">{error}</p>}
+      {error && (
+        <div className="directory-message" role="alert">
+          <p>{error}</p>
+          <button type="button" className="button button--small button--outline" onClick={() => setReloadKey((key) => key + 1)}>
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
       {specialists.length > 0 && (
         <>
           <div
@@ -282,9 +293,12 @@ function SpecialistsPage({ settings }) {
   const [specialists, setSpecialists] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
+    setError('');
     apiRequest('/api/v1/directory/specialists')
       .then(({ specialists: directory }) => {
         if (active) setSpecialists(directory);
@@ -296,7 +310,7 @@ function SpecialistsPage({ settings }) {
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, []);
+  }, [reloadKey]);
 
   return (
     <>
@@ -305,11 +319,19 @@ function SpecialistsPage({ settings }) {
       <main id="main">
         <section className="section section--white">
           <SectionHeading
+            level={1}
             title="جميع الأخصائيين"
             description="تعرّف على الأخصائيين المعتمدين وخيارات المواعيد. حجز الأخصائي خدمة اختيارية."
           />
           {loading && <p className="directory-message" role="status">جارٍ تحميل الأخصائيين…</p>}
-          {error && <p className="directory-message" role="alert">{error}</p>}
+          {error && (
+            <div className="directory-message" role="alert">
+              <p>{error}</p>
+              <button type="button" className="button button--small button--outline" onClick={() => setReloadKey((key) => key + 1)}>
+                إعادة المحاولة
+              </button>
+            </div>
+          )}
           {!loading && !error && specialists.length === 0 && (
             <p className="directory-message">لا توجد ملفات أخصائيين معتمدة ومعلنة حاليًا.</p>
           )}
@@ -327,6 +349,9 @@ function SpecialistsPage({ settings }) {
 
 function Hero({ settings }) {
   const { homepage } = settings;
+  const primaryAction = homepage.primaryAction === 'جرّب اللعبة المجانية'
+    ? 'استكشف الألعاب'
+    : homepage.primaryAction;
   const [activeImage, setActiveImage] = useState(0);
   const heroImages = settings.heroImages ?? [];
 
@@ -362,6 +387,8 @@ function Hero({ settings }) {
                   src={getApiUrl(image.url)}
                   alt={image.altText || ''}
                   aria-hidden={index !== activeImage}
+                  loading={index === activeImage ? 'eager' : 'lazy'}
+                  decoding="async"
                 />
               ))}
             </div>
@@ -384,11 +411,21 @@ function Hero({ settings }) {
             )}
           </>
         ) : (
-          <>
-            <BrandLogo compact logoUrl={settings.logoUrl} />
-            <span className="hero__spark hero__spark--one" aria-hidden="true">✦</span>
-            <span className="hero__spark hero__spark--two" aria-hidden="true">✦</span>
-          </>
+          <div className="hero-demo" role="img" aria-label="معاينة توضيحية للعبة الحروف: اختر الكلمة التي تبدأ بحرف الباء">
+            <div className="hero-demo__header" aria-hidden="true">
+              <span>نشاط تجريبي</span>
+              <span>١ من ٣ خطوات</span>
+            </div>
+            <div className="hero-demo__question" aria-hidden="true">
+              <span>اختر الكلمة التي تبدأ بحرف</span>
+              <strong>ب</strong>
+            </div>
+            <div className="hero-demo__choices" aria-hidden="true">
+              <span><b>🦆</b><small>بطة</small></span>
+              <span><b>🍌</b><small>موز</small></span>
+              <span><b>🐱</b><small>قطة</small></span>
+            </div>
+          </div>
         )}
       </div>
       <div className="hero__content">
@@ -396,7 +433,7 @@ function Hero({ settings }) {
         <h1>{homepage.title}</h1>
         <p>{homepage.description}</p>
         <div className="hero__actions">
-          <a className="button button--primary" href="/games/first-letter-trial?source=home">{homepage.primaryAction}</a>
+          <a className="button button--primary" href="/games">{primaryAction}</a>
           <a className="button button--outline" href="#journey">{homepage.secondaryAction}</a>
         </div>
       </div>
@@ -474,9 +511,12 @@ function Plans() {
   const [plan, setPlan] = useState(null);
   const [loading, setLoading] = useState(true);
   const [planError, setPlanError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
+    setPlanError(false);
     apiRequest('/api/v1/payments/plan')
       .then(({ plan: currentPlan }) => {
         if (active) setPlan(currentPlan);
@@ -490,7 +530,7 @@ function Plans() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [reloadKey]);
 
   const monthlyPrice = plan?.configured
     ? new Intl.NumberFormat('ar-EG', {
@@ -514,14 +554,23 @@ function Plans() {
         <article className="plan-card">
           <h3>تجريبية</h3>
           <p className="plan-card__price">مجانية</p>
-          <ul><li>لعبة تجريبية واحدة</li><li>بدون اشتراك</li><li>لا تحفظ بيانات شخصية</li></ul>
-          <a className="button button--small button--outline" href="/games/first-letter-trial?source=home">جرّب</a>
+          <ul><li>ألعاب تجريبية عند توفرها</li><li>بدون اشتراك</li><li>لا تحفظ بيانات شخصية</li></ul>
+          <a className="button button--small button--outline" href="/games">استكشف الألعاب</a>
         </article>
         <article className="plan-card plan-card--featured">
           <h3>اشتراك شهري</h3>
           <p className="plan-card__price" aria-live="polite">{monthlyPrice}</p>
+          {planError && (
+            <button type="button" className="button button--small button--outline" onClick={() => setReloadKey((key) => key + 1)}>
+              إعادة المحاولة
+            </button>
+          )}
           <ul><li>الوصول للألعاب المنشورة</li><li>مسار تعلّم متدرج</li><li>متابعة أنشطة الأسرة</li></ul>
-          <a className="button button--small button--yellow" href="/dashboard?section=payments&period=monthly">اشترك شهريًا</a>
+          {loading || planError || !plan?.configured
+            ? <button className="button button--small button--yellow" type="button" disabled>
+                {loading ? 'جارٍ تحميل السعر…' : 'الاشتراك غير متاح حاليًا'}
+              </button>
+            : <a className="button button--small button--yellow" href="/dashboard?section=payments&period=monthly">اشترك شهريًا</a>}
         </article>
         {annualPrice && (
           <article className="plan-card plan-card--annual">
@@ -540,9 +589,12 @@ function Testimonials() {
   const [testimonials, setTestimonials] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
+    setError('');
     apiRequest('/api/v1/testimonials')
       .then(({ testimonials: approvedTestimonials }) => {
         if (active) setTestimonials(approvedTestimonials);
@@ -554,13 +606,20 @@ function Testimonials() {
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, []);
+  }, [reloadKey]);
 
   return (
     <section className="section section--white" id="testimonials">
       <SectionHeading title="آراء أولياء الأمور" description="تجارب حقيقية شاركها أولياء الأمور بعد مراجعتها واعتمادها." />
       {loading && <p className="dashboard-loading" role="status">جارٍ تحميل الآراء…</p>}
-      {error && <p className="dashboard-empty-state" role="status">{error}</p>}
+      {error && (
+        <div className="dashboard-empty-state" role="alert">
+          <p>{error}</p>
+          <button type="button" className="button button--small button--outline" onClick={() => setReloadKey((key) => key + 1)}>
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
       {!loading && !error && testimonials.length > 0 && <div className="testimonial-grid">
         {testimonials.map((item) => (
           <article className="testimonial-card" key={item.id}>
@@ -610,23 +669,48 @@ function Footer({ settings }) {
   return (
     <footer className="site-footer">
       <div className="site-footer__brand">
-        <BrandLogo logoUrl={settings.logoUrl} />
+        <BrandLogo homeHref="/" logoUrl={settings.logoUrl} />
         <span>لأن كل كلمة بداية لقصة أجمل</span>
       </div>
-      <nav aria-label="روابط السياسات">
-        <a href="#faq">الأسئلة الشائعة</a>
-        <a href="#plans">الباقات</a>
-        <a href="#home">تواصل معنا</a>
+      <nav aria-label="روابط سريعة">
+        <a href="/#faq">الأسئلة الشائعة</a>
+        <a href="/#plans">الباقات</a>
+        <a href="/games">استكشف الألعاب</a>
       </nav>
     </footer>
   );
 }
 
+function NotFoundPage({ settings }) {
+  return (
+    <div className="platform-brand" style={platformBrandStyle(settings)}>
+      <a className="skip-link" href="#main">انتقل للمحتوى</a>
+      <Header specialistPage settings={settings} />
+      <main id="main">
+        <section className="section section--white">
+          <div className="not-found-state">
+            <h1>الصفحة غير موجودة</h1>
+            <p>قد يكون الرابط غير صحيح أو أن الصفحة لم تعد متاحة.</p>
+            <div className="not-found-state__actions">
+              <a className="button button--primary" href="/">العودة للرئيسية</a>
+              <a className="button button--outline" href="/games">استكشف الألعاب</a>
+            </div>
+          </div>
+        </section>
+      </main>
+      <Footer settings={settings} />
+    </div>
+  );
+}
+
 export default function App() {
   const [portalRoute, setPortalRoute] = useState(() => window.location.pathname);
+  const currentRoute = portalRoute.replace(/\/+$/, '') || '/';
   const [platformSettings, setPlatformSettings] = useState(defaultPlatformSettings);
   const [platformSettingsError, setPlatformSettingsError] = useState('');
   const [platformSettingsLoaded, setPlatformSettingsLoaded] = useState(false);
+  const [platformSettingsReloadKey, setPlatformSettingsReloadKey] = useState(0);
+  const [platformSettingsRetrying, setPlatformSettingsRetrying] = useState(false);
 
   useEffect(() => {
     const updateRoute = () => setPortalRoute(window.location.pathname);
@@ -650,19 +734,31 @@ export default function App() {
         }
       })
       .finally(() => {
-        if (active) setPlatformSettingsLoaded(true);
+        if (active) {
+          setPlatformSettingsLoaded(true);
+          setPlatformSettingsRetrying(false);
+        }
       });
     return () => { active = false; };
-  }, []);
+  }, [platformSettingsReloadKey]);
 
   useEffect(() => {
-    if (portalRoute !== '/') {
-      document.title = 'حرف — معًا ننطق المستقبل';
+    if (currentRoute !== '/') {
+      const pageTitles = {
+        '/dashboard': 'لوحة الأسرة — حرف',
+        '/admin': 'لوحة الإدارة — حرف',
+        '/specialist': 'دخول الأخصائي — حرف',
+        '/specialists': 'الأخصائيون المعتمدون — حرف',
+        '/games': 'الألعاب التعليمية — حرف'
+      };
+      document.title = pageTitles[currentRoute] ?? (
+        currentRoute.startsWith('/games/') ? 'الألعاب التعليمية — حرف' : 'صفحة غير موجودة — حرف'
+      );
       document.querySelector('meta[name="description"]')?.setAttribute(
         'content',
         'حرف، منصة تفاعلية لتنمية مهارات التخاطب واللغة لدى الأطفال.'
       );
-      const isGameCatalog = portalRoute.replace(/\/+$/, '') === '/games';
+      const isGameCatalog = currentRoute === '/games';
       document.querySelector('meta[name="theme-color"]')?.setAttribute(
         'content',
         isGameCatalog ? platformSettings.colors.primary : '#f9fafb'
@@ -672,28 +768,44 @@ export default function App() {
     document.title = `${platformSettings.homepage.title.replace(/\s+/g, ' ').trim()} — حرف`;
     document.querySelector('meta[name="description"]')?.setAttribute('content', platformSettings.homepage.description);
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', platformSettings.colors.primary);
-  }, [portalRoute, platformSettings]);
+  }, [currentRoute, platformSettings]);
 
   const brandStyle = platformBrandStyle(platformSettings);
   const platformWarning = platformSettingsError
-    ? <p className="platform-settings-warning" role="status">يتم عرض الهوية الافتراضية مؤقتًا. {platformSettingsError}</p>
+    ? (
+      <div className="platform-settings-warning" role="status">
+        <span>يتم عرض الهوية الافتراضية مؤقتًا. {platformSettingsError}</span>
+        <button
+          type="button"
+          className="button button--small button--outline"
+          disabled={platformSettingsRetrying}
+          onClick={() => {
+            setPlatformSettingsRetrying(true);
+            setPlatformSettingsReloadKey((key) => key + 1);
+          }}
+        >
+          {platformSettingsRetrying ? 'جارٍ إعادة المحاولة…' : 'إعادة المحاولة'}
+        </button>
+      </div>
+    )
     : null;
   if (!platformSettingsLoaded) {
     return <main className="platform-settings-loading" aria-busy="true">
       <p role="status">جارٍ تجهيز المنصة…</p>
     </main>;
   }
-  if (portalRoute === '/dashboard') return <div className="platform-brand" style={brandStyle}>{platformWarning}<AuthPanel standaloneDashboard logoUrl={platformSettings.logoUrl} /></div>;
-  if (portalRoute === '/admin') return <div className="platform-brand" style={brandStyle}>{platformWarning}<AuthPanel standaloneAdmin logoUrl={platformSettings.logoUrl} /></div>;
-  if (portalRoute === '/specialist') return <div className="platform-brand" style={brandStyle}>{platformWarning}<AuthPanel standaloneSpecialist logoUrl={platformSettings.logoUrl} /></div>;
-  if (portalRoute === '/specialists') return <div className="platform-brand" style={brandStyle}>{platformWarning}<SpecialistsPage settings={platformSettings} /></div>;
-  if (portalRoute === '/games' || portalRoute.startsWith('/games/')) {
+  if (currentRoute === '/dashboard') return <div className="platform-brand" style={brandStyle}>{platformWarning}<AuthPanel standaloneDashboard logoUrl={platformSettings.logoUrl} /></div>;
+  if (currentRoute === '/admin') return <div className="platform-brand" style={brandStyle}>{platformWarning}<AuthPanel standaloneAdmin logoUrl={platformSettings.logoUrl} /></div>;
+  if (currentRoute === '/specialist') return <div className="platform-brand" style={brandStyle}>{platformWarning}<AuthPanel standaloneSpecialist logoUrl={platformSettings.logoUrl} /></div>;
+  if (currentRoute === '/specialists') return <div className="platform-brand" style={brandStyle}>{platformWarning}<SpecialistsPage settings={platformSettings} /></div>;
+  if (currentRoute === '/games' || currentRoute.startsWith('/games/')) {
     return (
       <Suspense fallback={<main className="game-page"><p className="dashboard-loading" role="status">جارٍ تجهيز الألعاب…</p></main>}>
         <GamesPage settings={platformSettings} />
       </Suspense>
     );
   }
+  if (currentRoute !== '/') return <NotFoundPage settings={platformSettings} />;
 
   return (
     <div className="platform-brand" style={brandStyle}>

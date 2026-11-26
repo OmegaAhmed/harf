@@ -5,6 +5,7 @@ import {
   questionnaireSchema,
   questionnaireSubmissionSchema
 } from '../src/validation/learningPath.js';
+import { initialQuestionnaire } from '../src/db/learningPathSeed.js';
 
 const questionnaire = {
   version: 3,
@@ -260,6 +261,25 @@ test('questionnaire editor rejects option IDs reused across questions', () => {
       }
     ]
   }).success, false);
+});
+
+test('admin can publish the first questionnaire when no published version exists', async () => {
+  const service = createService();
+  let publishedQuestionnaire = null;
+  service.repository.getActiveQuestionnaire = async () => publishedQuestionnaire;
+  service.repository.listPaths = async () => [];
+  service.repository.publishQuestionnaire = async (_actorId, input) => {
+    publishedQuestionnaire = { ...input, version: 1 };
+    return publishedQuestionnaire;
+  };
+
+  const draft = await service.getAdminQuestionnaire();
+  assert.equal(draft.version, 0);
+  assert.deepEqual(draft.questions, initialQuestionnaire.questions);
+
+  const result = await service.updateQuestionnaire({ _id: 'admin-id' }, initialQuestionnaire);
+  assert.equal(result.version, 1);
+  assert.deepEqual(result.questions, initialQuestionnaire.questions);
 });
 
 test('only parent-confirmed recommendations are stored after child ownership and learning consent checks', async () => {

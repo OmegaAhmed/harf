@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import AuthPanel from '../AuthPanel.jsx';
 import BrandLogo from '../BrandLogo.jsx';
 import { apiRequest, getApiUrl, setCsrfToken } from '../../lib/api.js';
+import { readableTextColor } from '../../lib/readableTextColor.js';
 import {
   GameAnswerOptions,
   GameAudio,
@@ -76,6 +77,7 @@ function GameCatalog({ settings }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [errorCode, setErrorCode] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
   const childId = new URLSearchParams(window.location.search).get('childId') ?? '';
 
   useEffect(() => {
@@ -121,17 +123,18 @@ function GameCatalog({ settings }) {
     return () => {
       active = false;
     };
-  }, [childId]);
+  }, [childId, reloadKey]);
 
   return (
     <div className="game-page game-page--catalog" style={{
       '--blue': settings.colors.primary,
       '--teal': settings.colors.teal,
+      '--teal-text': readableTextColor(settings.colors.teal),
       '--purple': settings.colors.purple,
       '--yellow': settings.colors.yellow,
       '--coral': settings.colors.coral,
       '--ink': settings.colors.ink ?? '#273DA8',
-      '--muted': settings.colors.muted ?? '#7884B5'
+      '--muted': readableTextColor(settings.colors.muted)
     }}>
       <GameHeader backHref={childId ? `/dashboard?section=profile&childId=${encodeURIComponent(childId)}` : '/'} logoUrl={settings.logoUrl} />
       <main className="game-page__main">
@@ -152,6 +155,10 @@ function GameCatalog({ settings }) {
                 إدارة موافقة حفظ أنشطة التعلّم
               </a>
             )}
+            <button type="button" className="button button--outline" onClick={() => {
+              setLoading(true);
+              setReloadKey((key) => key + 1);
+            }}>إعادة المحاولة</button>
           </div>
         )}
         {!loading && !error && childId && assignedPaths.length === 0 && (
@@ -240,6 +247,9 @@ function GamePlay({ gameId }) {
   const [saved, setSaved] = useState(false);
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState('');
+  const [errorCode, setErrorCode] = useState('');
+  const [errorStatus, setErrorStatus] = useState(0);
+  const [reloadKey, setReloadKey] = useState(0);
   const previewMode = useMemo(
     () => new URLSearchParams(window.location.search).get('preview') ?? '',
     []
@@ -260,6 +270,10 @@ function GamePlay({ gameId }) {
   );
   const isAdminPreview = previewMode === 'admin';
   const isTrial = game?.access === 'trial' || isAdminPreview;
+
+  useEffect(() => {
+    if (game?.title) document.title = `${game.title} — حرف`;
+  }, [game?.title]);
 
   useEffect(() => {
     if (!completion) return undefined;
@@ -286,6 +300,8 @@ function GamePlay({ gameId }) {
     async function loadGame() {
       setLoading(true);
       setError('');
+      setErrorCode('');
+      setErrorStatus(0);
       try {
         const { game: loadedGame } = await apiRequest(
           previewMode === 'admin'
@@ -312,7 +328,11 @@ function GamePlay({ gameId }) {
           ? requestedChildId
           : activeChildren[0]?.id ?? '');
       } catch (requestError) {
-        if (active) setError(requestError.message);
+        if (active) {
+          setError(requestError.message);
+          setErrorCode(requestError.code ?? '');
+          setErrorStatus(requestError.status ?? 0);
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -322,7 +342,7 @@ function GamePlay({ gameId }) {
     return () => {
       active = false;
     };
-  }, [gameId, previewMode, requestedChildId]);
+  }, [gameId, previewMode, requestedChildId, reloadKey]);
 
   useEffect(() => {
     if (!selectedChildId || game?.access !== 'parent') {
@@ -654,12 +674,18 @@ function GamePlay({ gameId }) {
         {!loading && error && !game && (
           <section className="game-message-card" role="alert">
             <h1>تعذر فتح اللعبة</h1>
-            <p>{error === 'Sign in to continue.'
+            <p>{errorCode === 'AUTHENTICATION_REQUIRED'
               ? 'تحتاج الألعاب المخصصة للأسر إلى تسجيل دخول ولي أمر معتمد.'
               : error}</p>
             <div className="game-message-card__actions">
               <a className="button button--outline" href="/">العودة للموقع وتسجيل الدخول</a>
               <a className="button button--primary" href="/games">الألعاب المتاحة للزوار</a>
+              {(errorStatus >= 500 || errorCode === 'NETWORK_ERROR') && (
+                <button type="button" className="button button--outline" onClick={() => {
+                  setLoading(true);
+                  setReloadKey((key) => key + 1);
+                }}>إعادة المحاولة</button>
+              )}
             </div>
           </section>
         )}

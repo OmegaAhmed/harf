@@ -4,6 +4,7 @@ import { GameVersion } from '../models/GameVersion.js';
 import { MediaAsset } from '../models/MediaAsset.js';
 import { LearningLevel } from '../models/LearningLevel.js';
 import { RewardDefinition } from '../models/RewardDefinition.js';
+import { PlatformSettings } from '../models/PlatformSettings.js';
 import { getGame } from '../games/catalog.js';
 
 const BUILT_IN_GAME_IDS = ['first-letter-trial', 'word-sounds', 'word-match', 'matching-pairs', 'animal-sounds'];
@@ -179,9 +180,13 @@ export function createGameLibraryRepository() {
       return Boolean(draftReference || versionReference || levelReference || rewardReference);
     },
     async listAssetUsage(assetId) {
-      const [definitions, versions] = await Promise.all([
+      const [definitions, versions, platformSettings] = await Promise.all([
         GameDefinition.find({ draftAssetIds: assetId }).select('gameId draftContent').lean(),
-        GameVersion.find({ assetIds: assetId }).select('gameId version content').lean()
+        GameVersion.find({ assetIds: assetId }).select('gameId version content').lean(),
+        PlatformSettings.findOne({
+          key: 'platform',
+          $or: [{ logoAssetId: assetId }, { heroImageAssetIds: assetId }]
+        }).select('logoAssetId heroImageAssetIds').lean()
       ]);
       const uses = [];
       const addContentUses = (gameId, title, source, version, content) => {
@@ -247,6 +252,24 @@ export function createGameLibraryRepository() {
           location: 'صورة المكافأة'
         });
       });
+      if (String(platformSettings?.logoAssetId) === assetId) {
+        uses.push({
+          gameId: 'platform',
+          title: 'هوية المنصة',
+          source: 'إعدادات المنصة',
+          version: null,
+          location: 'الشعار'
+        });
+      }
+      if (platformSettings?.heroImageAssetIds?.some((id) => String(id) === assetId)) {
+        uses.push({
+          gameId: 'platform',
+          title: 'الصفحة الرئيسية',
+          source: 'إعدادات المنصة',
+          version: null,
+          location: 'صور الواجهة'
+        });
+      }
       return uses;
     },
     async replaceDraftAssetReferences(oldAssetId, newAssetId) {

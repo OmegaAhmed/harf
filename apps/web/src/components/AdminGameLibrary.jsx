@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiRequest, getApiUrl } from '../lib/api.js';
 import { uploadPrivateBlob } from '../lib/blobUpload.js';
+import { optimizeImageFile } from '../lib/optimizeImage.js';
+import { optimizeMediaFile } from '../lib/optimizeMediaFile.js';
 import AdminSpatialEditor, { createSpatialDraft } from './games/AdminSpatialEditor.jsx';
 
 const events = [
@@ -292,6 +294,7 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
     setError('');
     setNotice('');
     try {
+      const optimizedFile = await optimizeImageFile(file);
       const metadata = {
         displayName: `صورة رفيق ${content.title || selectedGame?.gameId || 'اللعبة'}`,
         kind: 'image',
@@ -299,14 +302,14 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
         category: 'رفاق الألعاب',
         tags: 'رفيق، حيوان، لعبة'
       };
-      const storageName = await uploadPrivateBlob(file, '/api/v1/admin/assets/upload-token', 'media');
+      const storageName = await uploadPrivateBlob(optimizedFile, '/api/v1/admin/assets/upload-token', 'media');
       const result = await apiRequest('/api/v1/admin/assets', storageName ? {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...metadata, storageName })
       } : {
         method: 'POST',
-        body: assetUploadFormData(metadata, file)
+        body: assetUploadFormData(metadata, optimizedFile)
       });
       setAssets((current) => [result.asset, ...current]);
       updateContentField('companionAnimalImageAssetId', result.asset.id);
@@ -695,13 +698,16 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
     const form = event.currentTarget;
     setBusy(true);
     setError('');
-    setNotice('');
+    setNotice(['audio', 'video'].includes(uploadKind) ? 'جارٍ تجهيز ملف الوسائط قبل الرفع...' : '');
     try {
+      const file = uploadKind === 'image'
+        ? await optimizeImageFile(uploadFile)
+        : await optimizeMediaFile(uploadFile, uploadKind);
       const storageName = await uploadPrivateBlob(
-        uploadFile,
+        file,
         '/api/v1/admin/assets/upload-token',
         'media',
-        uploadKind === 'animation' ? 'application/json' : uploadFile.type
+        uploadKind === 'animation' ? 'application/json' : file.type
       );
       const metadata = {
         displayName: uploadName,
@@ -716,7 +722,7 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
         body: JSON.stringify({ ...metadata, storageName })
       } : {
         method: 'POST',
-        body: assetUploadFormData(metadata, uploadFile)
+        body: assetUploadFormData(metadata, file)
       });
       setAssets((current) => [result.asset, ...current]);
       setUploadName('');
@@ -744,7 +750,7 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
     };
     setBusy(true);
     setError('');
-    setNotice('');
+    setNotice(['audio', 'video'].includes(asset.kind) ? 'جارٍ تجهيز ملف الوسائط قبل الرفع...' : '');
     try {
       const result = await apiRequest(`/api/v1/admin/assets/${asset.id}`, {
         method: 'PATCH',
@@ -768,11 +774,14 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
     setError('');
     setNotice('');
     try {
+      const optimizedFile = asset.kind === 'image'
+        ? await optimizeImageFile(file)
+        : await optimizeMediaFile(file, asset.kind);
       const storageName = await uploadPrivateBlob(
-        file,
+        optimizedFile,
         '/api/v1/admin/assets/upload-token',
         'media',
-        asset.kind === 'animation' ? 'application/json' : file.type
+        asset.kind === 'animation' ? 'application/json' : optimizedFile.type
       );
       await apiRequest(`/api/v1/admin/assets/${asset.id}/replace`, storageName ? {
         method: 'POST',
@@ -780,7 +789,7 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
         body: JSON.stringify({ storageName })
       } : {
         method: 'POST',
-        body: assetUploadFormData({}, file)
+        body: assetUploadFormData({}, optimizedFile)
       });
       await loadData();
       setNotice('تم استبدال الملف وإنشاء أصل جديد. تم تحديث المسودات إلى الأصل الجديد مع الاحتفاظ بمراجع النسخ المنشورة القديمة.');
@@ -817,14 +826,17 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
   };
 
   const deleteAsset = async (asset) => {
-    if (!window.confirm(`حذف الأصل «${asset.displayName}» نهائيًا؟`)) return;
+    const usageWarning = asset.usage?.length
+      ? ` هذا الأصل مستخدم في ${asset.usage.length} موضعًا؛ حذفه قد يعطّل الصور أو الأصوات المرتبطة.`
+      : '';
+    if (!window.confirm(`حذف الأصل «${asset.displayName}» نهائيًا؟${usageWarning}`)) return;
     setBusy(true);
     setError('');
     setNotice('');
     try {
       await apiRequest(`/api/v1/admin/assets/${asset.id}`, { method: 'DELETE' });
       setAssets((current) => current.filter((item) => item.id !== asset.id));
-      setNotice('تم حذف الأصل غير المرتبط بأي مسودة أو نسخة منشورة.');
+      setNotice('تم حذف الأصل نهائيًا.');
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -1560,9 +1572,9 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
             <label>نوع الأصل
               <select value={uploadKind} onChange={(event) => setUploadKind(event.target.value)}>
                 <option value="image">صورة ثابتة (PNG، JPEG، WebP) — حتى 5 MB</option>
-                <option value="audio">صوت (MP3، WAV، OGG) — حتى 10 MB</option>
+                <option value="audio">صوت (MP3، WAV، OGG، WebM) — حتى 10 MB بعد التحسين (25 MB قبل التحسين)</option>
                 <option value="animation">رسوم متحركة (GIF أو Lottie JSON آمن) — حتى 3 MB</option>
-                <option value="video">فيديو (MP4) — حتى 20 MB</option>
+                <option value="video">فيديو (MP4 أو WebM) — حتى 20 MB بعد التحسين (50 MB قبل التحسين)</option>
               </select>
             </label>
             {uploadKind === 'image' && (
@@ -1582,7 +1594,7 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
               <input
                 type="file"
                 required
-                accept={uploadKind === 'image' ? 'image/png,image/jpeg,image/webp' : uploadKind === 'audio' ? 'audio/mpeg,audio/wav,audio/ogg' : uploadKind === 'video' ? 'video/mp4,.mp4' : 'image/gif,application/json,.json'}
+                accept={uploadKind === 'image' ? 'image/png,image/jpeg,image/webp' : uploadKind === 'audio' ? 'audio/mpeg,audio/wav,audio/ogg,audio/webm,.webm' : uploadKind === 'video' ? 'video/mp4,video/webm,.mp4,.webm' : 'image/gif,application/json,.json'}
                 onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
               />
             </label>
@@ -1593,7 +1605,7 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
               </div>
             )}
             <button type="submit" className="button button--primary" disabled={busy || !uploadFile}>رفع وفحص الملف</button>
-            <small>يُفحص المحتوى الفعلي للملف، ولا يُعتمد امتداد الاسم أو نوع MIME المرسل من المتصفح.</small>
+            <small>تُصغّر الصور الكبيرة وتُضغط تلقائيًا، كما تُحوّل ملفات الصوت والفيديو الكبيرة إلى WebM عند دعم المتصفح. قد يستغرق التحويل وقتًا يقارب مدة الملف؛ وإذا لم يدعم المتصفح التحويل أو لم يقلل الحجم، يُرفع الملف الأصلي ضمن الحد المسموح. يُفحص المحتوى الفعلي للملف قبل حفظه.</small>
           </form>
           <section className="admin-library__panel">
             <h3>الأصول المحفوظة ({filteredAssets.length} من {assets.length})</h3>
@@ -1632,7 +1644,7 @@ function AdminGameLibrary({ user, onSignOut, onReauthenticate, initialView = 'ga
                     <div className="admin-library__asset-actions">
                       <label className="admin-library__replace">
                         استبدال الملف
-                        <input type="file" accept={asset.kind === 'image' ? 'image/png,image/jpeg,image/webp' : asset.kind === 'audio' ? 'audio/mpeg,audio/wav,audio/ogg' : asset.kind === 'video' ? 'video/mp4,.mp4' : 'image/gif,application/json,.json'}
+                        <input type="file" accept={asset.kind === 'image' ? 'image/png,image/jpeg,image/webp' : asset.kind === 'audio' ? 'audio/mpeg,audio/wav,audio/ogg,audio/webm,.webm' : asset.kind === 'video' ? 'video/mp4,video/webm,.mp4,.webm' : 'image/gif,application/json,.json'}
                           disabled={busy} onChange={(event) => void replaceFromInput(event, asset)} />
                       </label>
                       <button type="button" className="button button--small button--outline" disabled={busy} onClick={() => void changeAssetState(asset, !asset.active)}>

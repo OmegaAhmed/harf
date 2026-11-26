@@ -3233,7 +3233,7 @@ test('platform identity settings are public-read, administrator-write, and retai
   const defaults = await request('/platform/settings');
   assert.equal(defaults.status, 200);
   const defaultPlatformSettings = (await defaults.json()).settings;
-  assert.equal(defaultPlatformSettings.homepage.primaryAction, 'جرّب اللعبة المجانية');
+  assert.equal(defaultPlatformSettings.homepage.primaryAction, 'استكشف الألعاب');
   assert.equal(defaultPlatformSettings.colors.ink, '#273DA8');
   assert.equal(defaultPlatformSettings.colors.muted, '#7884B5');
   assert.equal(Object.hasOwn(defaultPlatformSettings, 'textColors'), false);
@@ -3735,13 +3735,6 @@ test('administrator game library verifies uploads and publishes immutable game v
     body: { altText: 'تغيير غير مصرح' }
   });
   assert.equal(forbiddenAssetEdit.status, 403);
-  const deleteDraftAssigned = await request(`/admin/assets/${asset.id}`, {
-    method: 'DELETE',
-    cookie: adminCookie,
-    csrfToken
-  });
-  assert.equal(deleteDraftAssigned.status, 409);
-
   const unpublishedAccess = await request('/games/managed-content-test');
   assert.equal(unpublishedAccess.status, 404);
   const published = await request('/admin/games/managed-content-test/publish', {
@@ -4057,19 +4050,6 @@ test('administrator game library verifies uploads and publishes immutable game v
   const history = await request(`/children/${child.id}/game-attempts`, { cookie: parent.cookie });
   assert.deepEqual((await history.json()).attempts.map((attempt) => attempt.gameVersion).sort(), ['1', '2']);
 
-  const deleteAssigned = await request(`/admin/assets/${asset.id}`, {
-    method: 'DELETE',
-    cookie: adminCookie,
-    csrfToken
-  });
-  assert.equal(deleteAssigned.status, 409);
-  const deleteAssignedAnimation = await request(`/admin/assets/${animationAsset.id}`, {
-    method: 'DELETE',
-    cookie: adminCookie,
-    csrfToken
-  });
-  assert.equal(deleteAssignedAnimation.status, 409);
-
   const disabledAsset = await request(`/admin/assets/${replacementAsset.id}`, {
     method: 'PATCH',
     cookie: adminCookie,
@@ -4235,6 +4215,14 @@ test('administrator game library verifies uploads and publishes immutable game v
     buffer: Buffer.concat([png, Buffer.alloc((5 * 1024 * 1024) + 1 - png.length)])
   });
   assert.equal(oversized.status, 413);
+
+  const deletedAssignedAsset = await request(`/admin/assets/${asset.id}`, {
+    method: 'DELETE',
+    cookie: adminCookie,
+    csrfToken
+  });
+  assert.equal(deletedAssignedAsset.status, 204);
+  assert.equal((await request(`/media/${asset.id}`)).status, 404);
 });
 
 test('admin-only approval rejects parent actors and does not accept role or permission changes', async () => {

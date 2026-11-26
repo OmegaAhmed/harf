@@ -616,8 +616,8 @@ export function createAdminRouter({
         kind: 'media',
         allowedContentTypes: [
           'image/png', 'image/jpeg', 'image/webp', 'image/gif',
-          'audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/ogg',
-          'video/mp4', 'application/json'
+          'audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/ogg', 'audio/webm',
+          'video/mp4', 'video/webm', 'application/json'
         ],
         maximumSizeInBytes: 20 * 1024 * 1024
       });

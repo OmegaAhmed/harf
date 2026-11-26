@@ -1,5 +1,6 @@
 import { AppError } from '../middleware/errors.js';
 import { NOTIFICATION_TYPES } from './notificationTypes.js';
+import { initialQuestionnaire } from '../db/learningPathSeed.js';
 
 function accuracyPercent(attempts) {
   const questionCount = attempts.reduce((total, attempt) => total + attempt.totalQuestions, 0);
@@ -236,7 +237,12 @@ export class LearningPathService {
 
   async getAdminQuestionnaire() {
     const questionnaire = await this.repository.getActiveQuestionnaire();
-    if (!questionnaire) throw new AppError(503, 'LEARNING_QUESTIONNAIRE_UNAVAILABLE', 'لم يتم إعداد استبيان تعلّم منشور بعد.');
+    if (!questionnaire) {
+      return {
+        version: 0,
+        ...initialQuestionnaire
+      };
+    }
     return {
       version: questionnaire.version,
       maxAssignments: questionnaire.maxAssignments,
@@ -245,10 +251,7 @@ export class LearningPathService {
   }
 
   async updateQuestionnaire(actor, input) {
-    const [paths, currentQuestionnaire] = await Promise.all([
-      this.repository.listPaths(),
-      this.repository.getActiveQuestionnaire()
-    ]);
+    const paths = await this.repository.listPaths();
     const nextOptions = new Set(input.questions.flatMap(({ options }) => options.map(({ id }) => id)));
     const nextSkills = new Set(input.questions.flatMap(({ options }) => options.flatMap(({ skillIds }) => skillIds)));
     const incompatiblePath = paths.find((path) => path.status === 'published'
@@ -259,7 +262,6 @@ export class LearningPathService {
     if (incompatiblePath) {
       throw new AppError(409, 'LEARNING_QUESTIONNAIRE_IN_USE', `حدّث قواعد المسار «${incompatiblePath.title}» قبل إزالة الخيارات أو المهارات المرتبطة به.`);
     }
-    if (!currentQuestionnaire) throw new AppError(503, 'LEARNING_QUESTIONNAIRE_UNAVAILABLE', 'لم يتم إعداد استبيان تعلّم منشور بعد.');
     let questionnaire;
     try {
       questionnaire = await this.repository.publishQuestionnaire(actor._id ?? actor.id, input);

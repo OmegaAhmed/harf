@@ -6,7 +6,7 @@ const mediaAssetSchema = new mongoose.Schema({
   category: { type: String, trim: true, maxlength: 40, default: '' },
   tags: { type: [String], default: [] },
   kind: { type: String, enum: ['image', 'audio', 'animation', 'video'], required: true },
-  mimeType: { type: String, enum: ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'video/mp4', 'application/json'], required: true },
+  mimeType: { type: String, enum: ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'video/mp4', 'video/webm', 'application/json'], required: true },
   storageName: { type: String, required: true, unique: true, match: /^(?:[a-f\d-]{36}|media\/[a-f\d-]{36})$/i },
   sizeBytes: { type: Number, required: true, min: 1, max: 20971520 },
   width: { type: Number, min: 1, max: 8192, default: null },

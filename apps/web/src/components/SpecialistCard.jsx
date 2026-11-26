@@ -12,6 +12,8 @@ export default function SpecialistCard({ specialist }) {
             className="specialist-card__portrait specialist-card__portrait--landscape"
             src={getApiUrl(specialist.profilePhotoUrl)}
             alt={`الصورة الشخصية لـ${displayName}`}
+            loading="lazy"
+            decoding="async"
             onError={(event) => { event.currentTarget.hidden = true; }}
           />
         )}

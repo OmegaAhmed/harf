@@ -17,6 +17,41 @@ export function setCsrfToken(token) {
   csrfToken = typeof token === 'string' ? token : '';
 }
 
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function isRetryableResponse(response, payload) {
+  if ([502, 504].includes(response.status)) return true;
+  return response.status === 503
+    && ['DATABASE_UNAVAILABLE', 'SERVICE_UNAVAILABLE'].includes(payload?.error?.code);
+}
+
+function fallbackErrorMessage(status, code) {
+  if (status >= 500) return 'الخدمة غير متاحة مؤقتًا. يرجى المحاولة بعد قليل.';
+  if (code === 'INVALID_CREDENTIALS') return 'البريد الإلكتروني أو كلمة المرور غير صحيحة.';
+  if (code === 'AUTHENTICATION_REQUIRED') return 'سجّل الدخول للمتابعة.';
+  if (status === 401) return 'تعذر التحقق من الحساب. راجع البيانات أو سجّل الدخول مجددًا.';
+  if (status === 403) return 'ليس لديك صلاحية تنفيذ هذا الإجراء.';
+  if (status === 404) return 'المحتوى المطلوب غير متاح.';
+  if (status === 409) return 'تعذر إتمام الإجراء بسبب تعارض في البيانات. حدّث الصفحة وحاول مرة أخرى.';
+  if (status === 413) return 'حجم الملف أو البيانات أكبر من المسموح.';
+  if (status === 429) return 'تجاوزت عدد المحاولات المسموح. انتظر قليلًا ثم حاول مجددًا.';
+  return 'تعذر إتمام الطلب. راجع البيانات وحاول مرة أخرى.';
+}
+
+function createApiError(response, payload) {
+  const serverMessage = payload?.error?.message;
+  const message = typeof serverMessage === 'string' && /[\u0600-\u06FF]/.test(serverMessage)
+    ? serverMessage
+    : fallbackErrorMessage(response.status, payload?.error?.code);
+  const error = new Error(message);
+  error.status = response.status;
+  error.code = payload?.error?.code;
+  error.details = payload?.error?.details;
+  return error;
+}
+
 export async function apiRequest(path, options = {}) {
   const method = (options.method ?? 'GET').toUpperCase();
   const headers = {
@@ -27,30 +62,35 @@ export async function apiRequest(path, options = {}) {
     headers['X-CSRF-Token'] = csrfToken;
   }
 
-  const response = await fetch(getApiUrl(path), {
+  const request = {
     ...options,
     method,
     credentials: 'include',
     headers
-  });
+  };
+  const retryDelays = [300, 900];
 
-  if (!response.ok) {
+  for (let attempt = 0; ; attempt += 1) {
+    const apiUrl = getApiUrl(path);
+    let response;
+    try {
+      response = await fetch(apiUrl, request);
+    } catch (requestError) {
+      if (!(requestError instanceof TypeError)) throw requestError;
+      const error = new Error('تعذر الاتصال بالخدمة. تحقق من اتصالك بالإنترنت ثم حاول مجددًا.');
+      error.code = 'NETWORK_ERROR';
+      throw error;
+    }
+    if (response.ok) {
+      if (response.status === 204) return null;
+      return response.json();
+    }
+
     const payload = await response.json().catch(() => null);
-    const message = payload?.error?.message ?? `API request failed with status ${response.status}.`;
-    const validationMessages = Array.isArray(payload?.error?.details)
-      ? payload.error.details
-        .map((detail) => [detail.path, detail.message].filter(Boolean).join(': '))
-        .filter(Boolean)
-      : [];
-    const error = new Error(validationMessages.length
-      ? `${message} (${validationMessages.join('; ')})`
-      : message);
-    error.status = response.status;
-    error.code = payload?.error?.code;
-    error.details = payload?.error?.details;
-    throw error;
+    if (method === 'GET' && attempt < retryDelays.length && isRetryableResponse(response, payload)) {
+      await wait(retryDelays[attempt]);
+      continue;
+    }
+    throw createApiError(response, payload);
   }
-
-  if (response.status === 204) return null;
-  return response.json();
 }

@@ -545,8 +545,8 @@ export class GameLibraryService {
       if (asset.kind !== assignment.kind) {
         throw new AppError(400, 'ASSET_KIND_MISMATCH', 'The assigned asset type does not match its game event.');
       }
-      if (assignment.kind === 'video' && asset.mimeType !== 'video/mp4') {
-        throw new AppError(400, 'ASSET_KIND_MISMATCH', 'Mascot videos must use the verified MP4 format.');
+      if (assignment.kind === 'video' && !['video/mp4', 'video/webm'].includes(asset.mimeType)) {
+        throw new AppError(400, 'ASSET_KIND_MISMATCH', 'Mascot videos must use a verified MP4 or WebM format.');
       }
     }
     if (content.companionAnimalImageAssetId) {

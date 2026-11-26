@@ -13,13 +13,16 @@
 
 ## File validation limits
 
-MIME declarations and original extensions are not trusted. `file-type` detects file signatures, and Lottie JSON is structurally validated. Multipart requests allow one file and at most 10 MB before the stricter per-kind checks.
+MIME declarations and original extensions are not trusted. `file-type` detects file signatures, WebM track types distinguish audio from video, and Lottie JSON is structurally validated. Media-library multipart requests allow one file up to 20 MB before the stricter per-kind checks.
 
 | Asset kind | Supported formats | Maximum |
 |---|---|---:|
 | Image | PNG, JPEG, WebP | 5 MB |
-| Audio | MP3, WAV, OGG | 10 MB |
+| Audio | MP3, WAV, OGG, audio-only WebM | 10 MB |
 | Animation | GIF; constrained Lottie JSON | 3 MB |
+| Video | MP4, WebM with a video track | 20 MB |
+
+Large images are resized/compressed on upload. Supported browsers transcode large audio/video uploads to WebM only when the compressed result is smaller; otherwise the original is kept if it meets the size limit.
 
 Lottie JSON rejects external assets/references and expressions and bounds dimensions, frame rate, duration, nesting, and node count. It is not executed as JavaScript. **The current game client does not include a Lottie renderer:** Lottie uploads can be stored, previewed as JSON, and assigned, but do not animate in the player; the default companion presentation is used. GIF animation and raster/audio previews are supported.
 
@@ -37,7 +40,7 @@ All paths below are under `/api/v1`:
 - `POST /admin/assets` — administrator-authenticated, CSRF-protected multipart upload; limited to 30 requests per 15 minutes per rate-limit key.
 - `GET /admin/assets/:assetId/preview` — protected asset preview.
 - `PATCH /admin/assets/:assetId` — activate or deactivate an asset.
-- `DELETE /admin/assets/:assetId` — delete only if no draft or published version references it.
+- `DELETE /admin/assets/:assetId` — permanently delete the asset and stored file; linked content may lose its image, audio, or video.
 - `GET /media/:assetId` — serve an active asset referenced by a currently published game.
 - Existing `GET /games`, `GET /games/:gameId`, answer, and attempt endpoints now read the Mongo-backed published catalog when available.
 

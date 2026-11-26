@@ -54,6 +54,23 @@ test('media service verifies and reads a private Blob pathname without changing 
   assert.equal(blobStorage.blobs.has(storageName), false);
 });
 
+test('media service deletes private Blob assets even when game content references them', async () => {
+  const storageName = `media/${uuid}`;
+  const blobStorage = createBlobStorage([[storageName, image]]);
+  let savedAsset = { _id: '0123456789abcdef01234567', storageName };
+  const repository = {
+    async findAsset() { return savedAsset; },
+    async isAssetReferenced() { return true; },
+    async deleteAsset() { savedAsset = null; }
+  };
+  const service = new MediaAssetService({ repository, storageDirectory: '.', blobStorage });
+
+  await service.delete(savedAsset._id);
+
+  assert.equal(savedAsset, null);
+  assert.equal(blobStorage.blobs.has(storageName), false);
+});
+
 test('specialist documents accept only the current specialist scoped Blob paths', async () => {
   const ownerId = '0123456789abcdef01234567';
   const storageName = `specialist-documents/${ownerId}/${uuid}`;

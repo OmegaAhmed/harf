@@ -23,6 +23,80 @@ const ALLOWED_SIGNATURES = Object.freeze({
   'video/mp4': 'video'
 });
 
+function readEbmlVint(buffer, offset, includeMarker) {
+  if (offset >= buffer.length) return null;
+  const firstByte = buffer[offset];
+  let length = 1;
+  let marker = 0x80;
+  while (length <= 8 && !(firstByte & marker)) {
+    length += 1;
+    marker >>= 1;
+  }
+  if (length > 8 || offset + length > buffer.length) return null;
+
+  let value = BigInt(includeMarker ? firstByte : firstByte & (marker - 1));
+  for (let index = 1; index < length; index += 1) {
+    value = value * 256n + BigInt(buffer[offset + index]);
+  }
+  if (!includeMarker && value === (1n << BigInt(7 * length)) - 1n) return { length, unknown: true };
+  if (value > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+  return { length, value: Number(value) };
+}
+
+function readEbmlElement(buffer, offset) {
+  const id = readEbmlVint(buffer, offset, true);
+  if (!id) return null;
+  const size = readEbmlVint(buffer, offset + id.length, false);
+  if (!size) return null;
+  const payloadStart = offset + id.length + size.length;
+  const end = size.unknown ? buffer.length : payloadStart + size.value;
+  if (end > buffer.length || end < payloadStart) return null;
+  return { id: id.value, payloadStart, end };
+}
+
+function webmTrackKinds(buffer) {
+  const header = readEbmlElement(buffer, 0);
+  if (header?.id !== 0x1a45dfa3) return null;
+  const segment = readEbmlElement(buffer, header.end);
+  if (segment?.id !== 0x18538067) return null;
+
+  const tracks = { audio: false, video: false };
+  function inspectTrackEntry(entry) {
+    let offset = entry.payloadStart;
+    while (offset < entry.end) {
+      const element = readEbmlElement(buffer, offset);
+      if (!element || element.end <= offset || element.end > entry.end) return;
+      if (element.id === 0x83 && element.end - element.payloadStart <= 4) {
+        let trackType = 0;
+        for (let index = element.payloadStart; index < element.end; index += 1) {
+          trackType = trackType * 256 + buffer[index];
+        }
+        if (trackType === 1) tracks.video = true;
+        if (trackType === 2) tracks.audio = true;
+      }
+      offset = element.end;
+    }
+  }
+
+  let offset = segment.payloadStart;
+  while (offset < segment.end) {
+    const element = readEbmlElement(buffer, offset);
+    if (!element || element.end <= offset || element.end > segment.end) return null;
+    if (element.id === 0x1654ae6b) {
+      let trackOffset = element.payloadStart;
+      while (trackOffset < element.end) {
+        const trackEntry = readEbmlElement(buffer, trackOffset);
+        if (!trackEntry || trackEntry.end <= trackOffset || trackEntry.end > element.end) return null;
+        if (trackEntry.id === 0xae) inspectTrackEntry(trackEntry);
+        trackOffset = trackEntry.end;
+      }
+      return tracks.audio || tracks.video ? tracks : null;
+    }
+    offset = element.end;
+  }
+  return null;
+}
+
 function imageDimensions(buffer, mimeType) {
   if (mimeType === 'image/png' && buffer.length >= 24) {
     return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
@@ -125,8 +199,19 @@ async function verifyFile(buffer, expectedKind) {
   } else {
     const detected = await fileTypeFromBuffer(buffer);
     const detectedMime = detected?.mime === 'audio/x-wav' ? 'audio/wav' : detected?.mime;
-    kind = ALLOWED_SIGNATURES[detectedMime];
-    mimeType = detectedMime;
+    if (detectedMime === 'video/webm') {
+      const tracks = webmTrackKinds(buffer);
+      if (tracks?.audio && !tracks.video) {
+        mimeType = 'audio/webm';
+        kind = 'audio';
+      } else if (tracks?.video) {
+        mimeType = 'video/webm';
+        kind = 'video';
+      }
+    } else {
+      kind = ALLOWED_SIGNATURES[detectedMime];
+      mimeType = detectedMime;
+    }
     if (!kind || kind !== expectedKind) {
       throw new AppError(400, 'UNSUPPORTED_MEDIA_TYPE', 'The file content does not match an allowed format for this asset type.');
     }
@@ -306,9 +391,6 @@ export class MediaAssetService {
   async delete(assetId) {
     const asset = await this.repository.findAsset(assetId);
     if (!asset) throw new AppError(404, 'ASSET_NOT_FOUND', 'The media asset was not found.');
-    if (await this.repository.isAssetReferenced(assetId)) {
-      throw new AppError(409, 'ASSET_IN_USE', 'This asset is assigned to a draft or published game. Remove the assignments and publish the change before deleting it.');
-    }
     await this.repository.deleteAsset(assetId);
     await this.removeStored(asset.storageName);
   }

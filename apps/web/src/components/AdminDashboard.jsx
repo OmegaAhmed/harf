@@ -1,16 +1,17 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { apiRequest, getApiUrl } from '../lib/api.js';
 import { displayNameOrFallback } from '../lib/displayName.js';
-import AdminReports from './AdminReports.jsx';
-import AdminLearningPaths from './AdminLearningPaths.jsx';
-import NotificationCenter from './NotificationCenter.jsx';
 import NotificationBell from './NotificationBell.jsx';
-import AdminTestimonials from './AdminTestimonials.jsx';
-import AdminSessions from './AdminSessions.jsx';
-import AdminSessionPayments from './AdminSessionPayments.jsx';
-import AdminRoles from './AdminRoles.jsx';
 
 const AdminGameLibrary = lazy(() => import('./AdminGameLibrary.jsx'));
+const AdminReports = lazy(() => import('./AdminReports.jsx'));
+const AdminLearningPaths = lazy(() => import('./AdminLearningPaths.jsx'));
+const NotificationCenter = lazy(() => import('./NotificationCenter.jsx'));
+const AdminTestimonials = lazy(() => import('./AdminTestimonials.jsx'));
+const AdminSessions = lazy(() => import('./AdminSessions.jsx'));
+const AdminSessionPayments = lazy(() => import('./AdminSessionPayments.jsx'));
+const AdminRoles = lazy(() => import('./AdminRoles.jsx'));
+const adminSectionFallback = <p className="dashboard-loading" role="status">جارٍ تحميل القسم…</p>;
 
 const views = [
   { id: 'overview', label: 'نظرة عامة', icon: '⌂' },
@@ -754,15 +755,21 @@ export default function AdminDashboard({ user, onSignOut, onReauthenticate, onPr
             />
           </Suspense>
         ) : view === 'sessions' ? (
-          <AdminSessions />
+          <Suspense fallback={adminSectionFallback}>
+            <AdminSessions />
+          </Suspense>
         ) : view === 'sessionPayments' ? (
-          <AdminSessionPayments onOpenNotifications={() => setView('notifications')} />
+          <Suspense fallback={adminSectionFallback}>
+            <AdminSessionPayments onOpenNotifications={() => setView('notifications')} />
+          </Suspense>
         ) : view === 'roles' ? (
-          <AdminRoles
-            canManagePermissions={hasPermission('permissions.manage')}
-            canManageRoles={hasPermission('roles.manage')}
-            canViewUsers={hasPermission('users.view')}
-          />
+          <Suspense fallback={adminSectionFallback}>
+            <AdminRoles
+              canManagePermissions={hasPermission('permissions.manage')}
+              canManageRoles={hasPermission('roles.manage')}
+              canViewUsers={hasPermission('users.view')}
+            />
+          </Suspense>
         ) : view === 'administrators' ? (
           <section className="admin-dashboard__content admin-dashboard-panel">
             <div className="admin-dashboard-panel__heading">
@@ -1003,6 +1010,8 @@ export default function AdminDashboard({ user, onSignOut, onReauthenticate, onPr
                         <img
                           src={getApiUrl(`/api/v1/admin/assets/${platformSettings.logoAssetId}/preview`)}
                           alt="معاينة شعار المنصة المختار"
+                          loading="lazy"
+                          decoding="async"
                           crossOrigin="use-credentials"
                         />
                         <span>معاينة الشعار</span>
@@ -1031,7 +1040,8 @@ export default function AdminDashboard({ user, onSignOut, onReauthenticate, onPr
                             key={asset.id}>
                             <input type="checkbox" checked={selected} onChange={() => toggleHeroImage(asset.id)} />
                             <img src={getApiUrl(`/api/v1/admin/assets/${asset.id}/preview`)}
-                              alt={asset.altText || asset.displayName} crossOrigin="use-credentials" />
+                              alt={asset.altText || asset.displayName} loading="lazy" decoding="async"
+                              crossOrigin="use-credentials" />
                             <span>{asset.displayName}</span>
                             <small>{asset.category?.trim() || 'غير مصنف'}</small>
                             {selected && <small>ضمن المعرض</small>}
@@ -1110,13 +1120,21 @@ export default function AdminDashboard({ user, onSignOut, onReauthenticate, onPr
               )}
           </section>
         ) : view === 'reports' ? (
-          <AdminReports />
+          <Suspense fallback={adminSectionFallback}>
+            <AdminReports />
+          </Suspense>
         ) : view === 'testimonials' ? (
-          <AdminTestimonials />
+          <Suspense fallback={adminSectionFallback}>
+            <AdminTestimonials />
+          </Suspense>
         ) : view === 'notifications' ? (
-          <NotificationCenter />
+          <Suspense fallback={adminSectionFallback}>
+            <NotificationCenter />
+          </Suspense>
         ) : view === 'learningPath' ? (
-          <AdminLearningPaths logoUrl={platformSettings?.logoUrl} />
+          <Suspense fallback={adminSectionFallback}>
+            <AdminLearningPaths logoUrl={platformSettings?.logoUrl} />
+          </Suspense>
         ) : view === 'profile' ? (
           <section className="admin-dashboard__content admin-dashboard-panel">
             <h2>تعديل الملف الشخصي</h2>

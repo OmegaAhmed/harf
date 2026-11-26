@@ -18,7 +18,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     eyebrow: 'منصة تفاعلية لتنمية مهارات التخاطب واللغة',
     title: 'معًا .. ننطق\nالمستقبل',
     description: 'ألعاب وقصص صغيرة تساعد طفلك على نطق الحروف والكلمات بثقة، خطوة بخطوة، في كل مرة بداية لقصة أجمل.',
-    primaryAction: 'جرّب اللعبة المجانية',
+    primaryAction: 'استكشف الألعاب',
     secondaryAction: 'شوف الفكرة'
   }
 });
