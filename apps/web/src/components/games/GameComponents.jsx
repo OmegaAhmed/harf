@@ -317,7 +317,7 @@ export function GameAnswerOptions({
           } : undefined}
           onClick={() => onSelect(index)}
         >
-          {(matchingPairs || audioChoice) && (
+          {(matchingPairs || audioChoice || optionImageUrls[index]) && (
             <GameImage
               className="game-answer__image"
               src={optionImageUrls[index]}
