@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { getApiUrl } from '../../lib/api.js';
 import { playGameAudio } from '../../lib/gameAudio.js';
-import happyImage from '../../../../../Branding/Character/happy.png';
-import ideaImage from '../../../../../Branding/Character/have-Idea.png';
-import listeningImage from '../../../../../Branding/Character/listening.png';
-import readingImage from '../../../../../Branding/Character/reading.png';
-import sadImage from '../../../../../Branding/Character/sad.png';
-import talkingImage from '../../../../../Branding/Character/talking.png';
-import thinkingImage from '../../../../../Branding/Character/thinking.png';
+import happyImage from '../../../../../Branding/Character/CharWebb/happy.webp';
+import ideaImage from '../../../../../Branding/Character/CharWebb/have-Idea.webp';
+import listeningImage from '../../../../../Branding/Character/CharWebb/listening.webp';
+import readingImage from '../../../../../Branding/Character/CharWebb/reading.webp';
+import sadImage from '../../../../../Branding/Character/CharWebb/sad.webp';
+import talkingImage from '../../../../../Branding/Character/CharWebb/talking.webp';
+import thinkingImage from '../../../../../Branding/Character/CharWebb/thinking.webp';
 import winningVideo from '../../../../../Branding/Character/Videos/Winnig.mp4';
 import losingVideo from '../../../../../Branding/Character/Videos/Loose.mp4';
 
